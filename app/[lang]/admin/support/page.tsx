@@ -70,8 +70,8 @@ export default async function AdminSupportPage({ params }: { params: Promise<{ l
     title: isAr ? t.subjectAr : t.subjectEn,
     category: t.category as any,
     status: t.status as any,
-    createdAt: t.createdAt.toISOString(),
-    updatedAt: t.updatedAt.toISOString(),
+    createdAt: t.createdAt?.toISOString?.() || new Date().toISOString(),
+    updatedAt: t.updatedAt?.toISOString?.() || new Date().toISOString(),
     userName: t.createdByName || "Unknown",
     assigneeName: t.assignedToName,
   }))

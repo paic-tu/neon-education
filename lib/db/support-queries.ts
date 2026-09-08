@@ -52,9 +52,7 @@ export async function listSupportTickets(
   userRole: string,
   filters: SupportTicketFilters = {}
 ): Promise<SupportTicketRow[]> {
-  const canManageAll =
-    hasPermission(userRole as any, "support:manage") ||
-    hasPermission(userRole as any, "support:read")
+  const canManageAll = hasPermission(userRole as any, "support:manage")
 
   const conditions = []
   if (!canManageAll) {
@@ -133,16 +131,16 @@ export async function listTicketMessages(
   userRole: string,
   ticketId: string
 ): Promise<SupportTicketMessageRow[]> {
-  const canReadAll =
-    hasPermission(userRole as any, "support:manage") ||
-    hasPermission(userRole as any, "support:read")
+  const canManageAll = hasPermission(userRole as any, "support:manage")
 
   const ticket = await db.query.supportTickets.findFirst({
     where: eq(supportTickets.id, ticketId),
     columns: { createdById: true },
   })
   if (!ticket) return []
-  if (!canReadAll && ticket.createdById !== sessionUserId) return []
+  if (!canManageAll && ticket.createdById !== sessionUserId) return []
+
+  const showInternal = canManageAll
 
   const whereConditions: any[] = [eq(supportTicketMessages.ticketId, ticketId)]
   if (!showInternal) whereConditions.push(eq(supportTicketMessages.isInternal, false))
@@ -174,12 +172,10 @@ export async function getSupportTicketById(
   userRole: string,
   ticketId: string
 ): Promise<SupportTicketRow | null> {
-  const canReadAll =
-    hasPermission(userRole as any, "support:manage") ||
-    hasPermission(userRole as any, "support:read")
+  const canManageAll = hasPermission(userRole as any, "support:manage")
 
   const conditions = [eq(supportTickets.id, ticketId)]
-  if (!canReadAll) conditions.push(eq(supportTickets.createdById, sessionUserId))
+  if (!canManageAll) conditions.push(eq(supportTickets.createdById, sessionUserId))
 
   const [row] = await db
     .select({

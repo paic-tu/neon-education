@@ -81,8 +81,8 @@ export default async function InstructorSupportPage({ params }: { params: Promis
     title: isAr ? t.subjectAr : t.subjectEn,
     category: t.category as any,
     status: (t.status as any) in statusLabels ? t.status : "open",
-    createdAt: t.createdAt.toISOString(),
-    updatedAt: t.updatedAt.toISOString(),
+    createdAt: t.createdAt?.toISOString?.() || new Date().toISOString(),
+    updatedAt: t.updatedAt?.toISOString?.() || new Date().toISOString(),
   }))
 
   const formatDate = (dateStr: string) => {

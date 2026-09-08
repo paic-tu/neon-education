@@ -86,6 +86,7 @@ export function AdminTicketsList({
 
   const filtered = useMemo(() => {
     return {
+      all: tickets,
       open: tickets.filter((t) => t.status === "open"),
       in_progress: tickets.filter((t) => t.status === "in_progress"),
       waiting_customer: tickets.filter((t) => t.status === "waiting_customer"),
@@ -196,8 +197,14 @@ export function AdminTicketsList({
   }
 
   return (
-    <Tabs defaultValue="open" className="w-full">
-      <TabsList className="grid grid-cols-2 sm:grid-cols-5 mb-6">
+    <Tabs defaultValue="all" className="w-full">
+      <TabsList className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 mb-6">
+        <TabsTrigger value="all">
+          {isAr ? "الكل" : "All"}
+          <Badge variant="secondary" className="ml-2 mr-2 text-xs h-5 min-w-[22px] justify-center bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300">
+            {filtered.all.length}
+          </Badge>
+        </TabsTrigger>
         <TabsTrigger value="open">
           {isAr ? "مفتوحة" : "Open"}
           <Badge variant="secondary" className="ml-2 mr-2 text-xs h-5 min-w-[22px] justify-center">
@@ -229,6 +236,7 @@ export function AdminTicketsList({
           </Badge>
         </TabsTrigger>
       </TabsList>
+      <TabsContent value="all">{renderTicketList(filtered.all)}</TabsContent>
       <TabsContent value="open">{renderTicketList(filtered.open)}</TabsContent>
       <TabsContent value="in_progress">{renderTicketList(filtered.in_progress)}</TabsContent>
       <TabsContent value="waiting_customer">{renderTicketList(filtered.waiting_customer)}</TabsContent>
