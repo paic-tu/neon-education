@@ -60,12 +60,29 @@ export default async function InstructorCoursesPage({ params }: { params: Promis
                     {isAr ? "لا توجد صورة" : "No Image"}
                   </div>
                 )}
-                <div className="absolute top-2 right-2">
+                <div className="absolute top-2 right-2 flex flex-col gap-1.5 items-end">
                   <Badge variant={course.isPublished ? "default" : "secondary"}>
                     {course.isPublished 
                       ? (isAr ? "منشور" : "Published") 
                       : (isAr ? "مسودة" : "Draft")}
                   </Badge>
+                  {course.deletionRequested ? (
+                    <Badge variant="destructive" className="bg-amber-600 hover:bg-amber-600">
+                      {isAr ? "قيد طلب الحذف" : "Deletion Pending"}
+                    </Badge>
+                  ) : !course.isPublished ? null : course.isApproved === false ? (
+                    <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200">
+                      {isAr ? "بانتظار اعتماد الأدمن" : "Pending Admin Approval"}
+                    </Badge>
+                  ) : course.approvalNote && course.isApproved === null ? (
+                    <Badge variant="destructive" className="bg-rose-600 hover:bg-rose-600">
+                      {isAr ? "مرفوض" : "Rejected"}
+                    </Badge>
+                  ) : course.isApproved === true ? (
+                    <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+                      {isAr ? "معتمد" : "Approved"}
+                    </Badge>
+                  ) : null}
                 </div>
               </div>
               <CardHeader>

@@ -122,6 +122,17 @@ export async function DELETE(
       return new NextResponse("Unauthorized", { status: 401 })
     }
 
+    const role = (session.user as any).role || "student"
+    const isAdmin = role === "admin"
+
+    // Attempt to extract optional body (for deletionRequestedReason passed by instructor)
+    let body: any = {}
+    try {
+      body = await req.clone().json()
+    } catch {
+      // body is optional; many clients call DELETE without body
+    }
+
     const course = await db.query.courses.findFirst({
       where: eq(courses.id, courseId),
     })
@@ -130,13 +141,33 @@ export async function DELETE(
       return new NextResponse("Not found", { status: 404 })
     }
 
-    if (course.instructorId !== session.user.id && session.user.role !== "admin") {
+    if (course.instructorId !== session.user.id && !isAdmin) {
       return new NextResponse("Unauthorized", { status: 401 })
     }
 
-    await db.delete(courses).where(eq(courses.id, courseId))
+    if (isAdmin) {
+      // Admin can hard-delete immediately (bypasses workflow).
+      // For the deletion-request workflow, use /api/courses/:id/deletion-review instead.
+      await db.delete(courses).where(eq(courses.id, courseId))
+      return NextResponse.json({ deleted: true, mode: "hard-delete" }, { status: 200 })
+    }
 
-    return new NextResponse(null, { status: 200 })
+    // Instructor: they cannot hard-delete. We *request* deletion; admin must approve.
+    await db.update(courses)
+      .set({
+        deletionRequested: true,
+        deletionRequestedAt: new Date(),
+        deletionRequestedReason: body?.reason ? String(body.reason).slice(0, 1000) : null,
+        deletionReviewedBy: null,
+        deletionReviewedAt: null,
+        deletionRejectedReason: null,
+      })
+      .where(eq(courses.id, courseId))
+
+    return NextResponse.json(
+      { deletionRequested: true, mode: "requested" },
+      { status: 202 }
+    )
   } catch (error) {
     console.log("[COURSE_ID_DELETE]", error)
     return new NextResponse("Internal Error", { status: 500 })

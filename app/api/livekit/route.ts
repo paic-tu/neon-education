@@ -16,41 +16,47 @@ export async function GET(req: NextRequest) {
   }
 
   const role = (session.user as any).role || "student"
-  const isCourseRoom = room.startsWith("course-")
-  const isCourseConsultationRoom = room.startsWith("consultation-") && room !== "consultation-tech"
-  const isGlobalConsultationRoom = room === "consultation-tech"
 
-  if (!isCourseRoom && !isCourseConsultationRoom && !isGlobalConsultationRoom) {
+  // ONLY allow rooms that are strictly tied to a course. Block:
+  //  - consultation-tech (global room not bounded to any course)
+  //  - consultation-<id> (separate per-course "consultation" rooms, not the actual course live session)
+  // Only rooms of the form: course-<courseId>  are permitted.
+  if (!room.startsWith("course-")) {
     return NextResponse.json({ error: "Invalid room" }, { status: 400 })
   }
 
-  if (isCourseRoom || isCourseConsultationRoom) {
-    const courseId = isCourseRoom ? room.replace("course-", "") : room.replace("consultation-", "")
-    if (!courseId) {
-      return NextResponse.json({ error: "Invalid room" }, { status: 400 })
-    }
+  const courseId = room.replace("course-", "")
+  if (!courseId) {
+    return NextResponse.json({ error: "Invalid room" }, { status: 400 })
+  }
 
-    const course = await getCourseById(courseId)
-    if (!course) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 })
-    }
-    // The "isLive" gate only applies to a course's live-session room, not its consultation room.
-    if (isCourseRoom && !course.isLive) {
-      return NextResponse.json({ error: "Not live" }, { status: 403 })
-    }
+  const course = await getCourseById(courseId)
+  if (!course) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  }
 
-    if (role === "student") {
-      const enrollment = await getEnrollment(session.user.id, courseId)
-      if (!enrollment) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-      }
-    } else if (role === "instructor") {
-      if (course.instructorId !== session.user.id) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-      }
-    } else if (role !== "admin") {
+  // The course must be configured as a LIVE course first (type = Live Course).
+  if (!course.isLive) {
+    return NextResponse.json({ error: "Not a live course" }, { status: 403 })
+  }
+
+  // -- Authorization per role --
+  // Instructor/Admin may enter BEFORE isStreaming=true so they can kick off the broadcast.
+  // Students may enter ONLY when the instructor has turned the stream ON (isStreaming=true).
+  if (role === "student") {
+    const enrollment = await getEnrollment(session.user.id, courseId)
+    if (!enrollment) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
+    if (!(course as any).isStreaming) {
+      return NextResponse.json({ error: "Stream not active" }, { status: 403 })
+    }
+  } else if (role === "instructor") {
+    if (course.instructorId !== session.user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+  } else if (role !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
   const apiKey = process.env.LIVEKIT_API_KEY

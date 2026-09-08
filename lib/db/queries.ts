@@ -1,6 +1,6 @@
 "use server"
 
-import { and, desc, eq, count, sql, inArray, asc, getTableColumns, sum, not, or, isNull } from "drizzle-orm"
+import { and, desc, eq, count, sql, inArray, asc, getTableColumns, sum, not, or, isNull, aliasedTable } from "drizzle-orm"
 import { db } from "@/lib/db"
 import { 
   courses, enrollments, lessons, notes, users, bookmarks, modules, progress, 
@@ -11,11 +11,16 @@ import {
 } from "@/lib/db/schema"
 import { revalidatePath } from "next/cache"
 
-// Courses
+// Courses — PUBLIC catalog: only courses that are published AND approved by an admin.
+// Instructors' own courses (including pending/approved/rejected status) still appear in their own dashboard via getInstructorCourses().
 export async function getAllCourses() {
   try {
     const allCourses = await db.query.courses.findMany({
-      where: eq(courses.isPublished, true),
+      where: and(
+        eq(courses.isPublished, true),
+        eq(courses.isApproved, true),
+        eq(courses.deletionRequested, false)
+      ),
       with: {
         instructor: true,
         category: true,
@@ -143,7 +148,10 @@ export async function getInstructors() {
 export async function getInstructorCourses(instructorId: string) {
   try {
     const instructorCourses = await db.query.courses.findMany({
-      where: eq(courses.instructorId, instructorId),
+      where: and(
+        eq(courses.instructorId, instructorId),
+        eq(courses.deletionRequested, false)
+      ),
       orderBy: [desc(courses.createdAt)],
       with: {
         category: true,
@@ -163,6 +171,56 @@ export async function getInstructorCourses(instructorId: string) {
     )
   } catch (error) {
     console.error("Error fetching instructor courses:", error)
+    return []
+  }
+}
+
+// --- Admin Moderation / Approval ---
+// Fetches all courses that need admin review.
+// Pending = not approved yet AND not explicitly rejected (no approvalNote + isApproved=false).
+// Also returns Approved + Rejected for history view + deletion requested courses.
+// Uses a users alias (requester_users) because the same users table is joined for "instructor" as well.
+const requesterUsers = aliasedTable(users, "requester_users")
+
+export async function getAdminCoursesForReview() {
+  try {
+    const rows = await db
+      .select({
+        id: courses.id,
+        titleAr: courses.titleAr,
+        titleEn: courses.titleEn,
+        slug: courses.slug,
+        thumbnailUrl: courses.thumbnailUrl,
+        isPublished: courses.isPublished,
+        isLive: courses.isLive,
+        price: courses.price,
+        isFree: courses.isFree,
+        createdAt: courses.createdAt,
+        updatedAt: courses.updatedAt,
+        isApproved: courses.isApproved,
+        approvedAt: courses.approvedAt,
+        approvalNote: courses.approvalNote,
+        deletionRequested: courses.deletionRequested,
+        deletionRequestedAt: courses.deletionRequestedAt,
+        deletionRequestedReason: courses.deletionRequestedReason,
+        deletionReviewedAt: courses.deletionReviewedAt,
+        deletionRejectedReason: courses.deletionRejectedReason,
+        instructorId: courses.instructorId,
+        instructorName: users.name,
+        instructorEmail: users.email,
+        approvedByName: requesterUsers.name,
+        categoryNameAr: categories.nameAr,
+        categoryNameEn: categories.nameEn,
+      })
+      .from(courses)
+      .innerJoin(users, eq(courses.instructorId, users.id))
+      .leftJoin(requesterUsers, eq(courses.approvedBy, requesterUsers.id))
+      .leftJoin(categories, eq(courses.categoryId, categories.id))
+      .orderBy(desc(courses.createdAt))
+
+    return rows
+  } catch (error) {
+    console.error("Error fetching admin courses for review:", error)
     return []
   }
 }

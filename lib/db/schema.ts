@@ -31,6 +31,8 @@ export const bookingStatusEnum = pgEnum("booking_status", ["requested", "confirm
 export const conversationTypeEnum = pgEnum("conversation_type", ["individual", "group", "community"])
 export const consultationSlotStatusEnum = pgEnum("consultation_slot_status", ["available", "booked", "cancelled"])
 export const consultationBookingStatusEnum = pgEnum("consultation_booking_status", ["requested", "confirmed", "completed", "cancelled"])
+export const supportTicketStatusEnum = pgEnum("support_ticket_status", ["open", "in_progress", "waiting_customer", "resolved", "closed"])
+export const supportTicketCategoryEnum = pgEnum("support_ticket_category", ["technical", "billing", "course_content", "account", "other"])
 
 // Site Settings (single-row key/value)
 export const siteSettings = pgTable("site_settings", {
@@ -138,6 +140,25 @@ export const courses = pgTable("courses", {
   isLive: boolean("is_live").notNull().default(false),
   isStreaming: boolean("is_streaming").notNull().default(false), // Indicates if the live stream is currently active
   isPublished: boolean("is_published").notNull().default(false),
+
+  // --- Admin Moderation / Approval Workflow ---
+  // Courses created by instructors start with isApproved = false (pending review).
+  // They are not publicly visible nor enrollable until an admin approves them.
+  isApproved: boolean("is_approved").notNull().default(false),
+  approvedAt: timestamp("approved_at"),
+  approvedBy: uuid("approved_by").references(() => users.id),
+  approvalNote: text("approval_note"), // Optional admin note (rejection reason or comment)
+
+  // --- Soft Deletion via Admin Approval ---
+  // Instructors cannot delete courses directly. They can *request* deletion;
+  // an admin must review and approve the deletion for the row to actually be removed (or soft-deleted).
+  deletionRequested: boolean("deletion_requested").notNull().default(false),
+  deletionRequestedAt: timestamp("deletion_requested_at"),
+  deletionRequestedReason: text("deletion_requested_reason"),
+  deletionReviewedBy: uuid("deletion_reviewed_by").references(() => users.id),
+  deletionReviewedAt: timestamp("deletion_reviewed_at"),
+  deletionRejectedReason: text("deletion_rejected_reason"),
+
   tags: jsonb("tags").$type<string[]>().default([]),
   requirements: jsonb("requirements").$type<string[]>().default([]),
   learningOutcomes: jsonb("learning_outcomes").$type<string[]>().default([]),
@@ -658,6 +679,9 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   studentBookings: many(bookings),
   conversations: many(conversationParticipants),
   sentMessages: many(messages),
+  createdSupportTickets: many(supportTickets, { relationName: "ticket_creator" }),
+  assignedSupportTickets: many(supportTickets, { relationName: "ticket_assignee" }),
+  supportTicketMessages: many(supportTicketMessages),
 }))
 
 export const coursesRelations = relations(courses, ({ one, many }) => ({
@@ -669,6 +693,7 @@ export const coursesRelations = relations(courses, ({ one, many }) => ({
     fields: [courses.categoryId],
     references: [categories.id],
   }),
+  supportTickets: many(supportTickets),
   modules: many(modules),
   lessons: many(lessons),
   enrollments: many(enrollments),
@@ -1110,4 +1135,69 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
+
+// Support Tickets System
+export const supportTickets = pgTable("support_tickets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  subjectAr: varchar("subject_ar", { length: 255 }).notNull(),
+  subjectEn: varchar("subject_en", { length: 255 }).notNull(),
+  descriptionAr: text("description_ar").notNull(),
+  descriptionEn: text("description_en").notNull(),
+  category: supportTicketCategoryEnum("category").notNull().default("technical"),
+  status: supportTicketStatusEnum("status").notNull().default("open"),
+  priority: varchar("priority", { length: 16 }).notNull().default("normal"),
+  createdById: uuid("created_by_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  assignedToId: uuid("assigned_to_id").references(() => users.id, { onDelete: "set null" }),
+  relatedCourseId: uuid("related_course_id").references(() => courses.id, { onDelete: "set null" }),
+  resolvedAt: timestamp("resolved_at"),
+  closedAt: timestamp("closed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+})
+
+export const supportTicketMessages = pgTable("support_ticket_messages", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  ticketId: uuid("ticket_id")
+    .notNull()
+    .references(() => supportTickets.id, { onDelete: "cascade" }),
+  senderId: uuid("sender_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  attachments: jsonb("attachments").$type<Array<{ name: string; url: string; size?: number; mimeType?: string }>>().default([]),
+  isInternal: boolean("is_internal").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})
+
+// Support Tickets Relations (AFTER table definitions to avoid hoisting TDZ)
+export const supportTicketsRelations = relations(supportTickets, ({ one, many }) => ({
+  createdBy: one(users, {
+    fields: [supportTickets.createdById],
+    references: [users.id],
+    relationName: "ticket_creator",
+  }),
+  assignedTo: one(users, {
+    fields: [supportTickets.assignedToId],
+    references: [users.id],
+    relationName: "ticket_assignee",
+  }),
+  relatedCourse: one(courses, {
+    fields: [supportTickets.relatedCourseId],
+    references: [courses.id],
+  }),
+  messages: many(supportTicketMessages),
+}))
+
+export const supportTicketMessagesRelations = relations(supportTicketMessages, ({ one }) => ({
+  ticket: one(supportTickets, {
+    fields: [supportTicketMessages.ticketId],
+    references: [supportTickets.id],
+  }),
+  sender: one(users, {
+    fields: [supportTicketMessages.senderId],
+    references: [users.id],
+  }),
+}))
 

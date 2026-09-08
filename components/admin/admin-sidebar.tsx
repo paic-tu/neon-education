@@ -23,6 +23,8 @@ import {
   MessageCircle,
   Video,
   MessageSquare,
+  ClipboardCheck,
+  Headphones,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { User } from "@/lib/auth"
@@ -119,6 +121,12 @@ function AdminNav({ user, isCollapsed }: AdminSidebarProps) {
           label: isAr ? "الدورات" : "Courses",
           icon: GraduationCap,
           permission: "courses:read" as const,
+        },
+        {
+          href: "/admin/course-reviews",
+          label: isAr ? "مراجعة الدورات" : "Course Reviews",
+          icon: ClipboardCheck,
+          permission: "courses:approve" as const,
         },
         {
           href: "/admin/lessons",
@@ -229,6 +237,12 @@ function AdminNav({ user, isCollapsed }: AdminSidebarProps) {
           label: isAr ? "الشهادات" : "Certificates",
           icon: Award,
           permission: "certificates:read" as const,
+        },
+        {
+          href: "/admin/support",
+          label: isAr ? "الدعم الفني" : "Support",
+          icon: Headphones,
+          permission: "support:read" as const,
         },
       ],
     },

@@ -15,7 +15,8 @@ import {
   HelpCircle,
   MessageCircle,
   Video,
-  FileText
+  FileText,
+  Headphones,
 } from "lucide-react"
 
 function InstructorNav({ isCollapsed, unreadCount = 0 }: { isCollapsed?: boolean, unreadCount?: number }) {
@@ -130,6 +131,18 @@ function InstructorNav({ isCollapsed, unreadCount = 0 }: { isCollapsed?: boolean
         },
       ],
     },
+    {
+      id: "support",
+      titleAr: "الدعم",
+      titleEn: "Support",
+      items: [
+        {
+          href: "/instructor/support",
+          label: isAr ? "الدعم الفني" : "Support",
+          icon: Headphones,
+        },
+      ],
+    },
   ]
   // "إنشاء دورة"، "الواجبات"، "الكويزات" أُزيلت من القائمة الرئيسية بقرار المستخدم —
   // مكانها المستهدف لاحقًا هو لوحة تحكم الدورة (per-course dashboard)، وصفحاتها
@@ -180,30 +193,9 @@ function InstructorNav({ isCollapsed, unreadCount = 0 }: { isCollapsed?: boolean
         </div>
       ))}
       
-      {!isCollapsed && (
-        <div className="mt-4 pt-4 border-t">
-          <div className="px-3 pb-2 text-xs font-semibold text-muted-foreground">
-            {isAr ? "الاستشارات" : "Consultations"}
-          </div>
-          <Link
-            href={`/${locale}/instructor/consultations?room=consultation-tech`}
-            className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-              pathWithoutLocale.startsWith("/instructor/consultations")
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
-            )}
-          >
-            <MessageCircle className="h-4 w-4" />
-            <span className="truncate">{isAr ? "استشارات تقنية" : "Tech Consultation"}</span>
-          </Link>
-        </div>
-      )}
-
       {/*
-        قسم "الدورات المباشرة" الديناميكي أُزيل من هنا بقرار المستخدم — مكانه المستهدف
-        لاحقًا هو لوحة تحكم الدورة. منطق الاستطلاع (liveCourses/loadingLive أعلاه) لم يُحذف
-        عمدًا حتى تُنقل هذه الميزة لمكانها الجديد.
+        قسم "الاستشارات التقنية" و "الدورات المباشرة" أُزيلا من هنا بقرار المستخدم.
+        منطق الاستطلاع liveCourses/loadingLive أعلاه مُحتفظ به مؤقتًا فقط.
       */}
 
       <div className={cn(!isCollapsed && "mt-4 pt-4 border-t")}>

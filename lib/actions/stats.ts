@@ -22,13 +22,14 @@ export async function getLandingPageStats() {
       .select({ value: avg(reviews.rating) })
       .from(reviews)
 
-    // Total published reviews with a comment, matching getLandingPageReviews' filter
+    // Total published 5-star reviews with a comment, matching getLandingPageReviews' filter
     const [reviewsCountResult] = await db
       .select({ value: count() })
       .from(reviews)
       .where(
         and(
           eq(reviews.isPublished, true),
+          eq(reviews.rating, 5),
           isNotNull(reviews.comment),
           sql`length(${reviews.comment}) > 0`
         )
@@ -68,7 +69,7 @@ export async function getLandingPageStats() {
   }
 }
 
-export async function getLandingPageReviews(limit = 6) {
+export async function getLandingPageReviews() {
   try {
     const rows = await db
       .select({
@@ -87,12 +88,12 @@ export async function getLandingPageReviews(limit = 6) {
       .where(
         and(
           eq(reviews.isPublished, true),
+          eq(reviews.rating, 5),
           isNotNull(reviews.comment),
           sql`length(${reviews.comment}) > 0`
         )
       )
       .orderBy(desc(reviews.createdAt))
-      .limit(Math.max(1, Math.min(12, Number(limit) || 6)))
 
     return rows
   } catch (error) {

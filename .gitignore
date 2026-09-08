@@ -33,3 +33,9 @@ next-env.d.ts
 # uploads
 public/uploads/*
 !public/uploads/.gitkeep
+
+# local runtime logs & temp output
+dev-server-output*.txt
+build-output.txt
+migration-output.txt
+probe-output.txt

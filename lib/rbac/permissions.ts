@@ -12,6 +12,7 @@ export type Permission =
   | "courses:write"
   | "courses:delete"
   | "courses:publish"
+  | "courses:approve"
   | "lessons:read"
   | "lessons:write"
   | "lessons:delete"
@@ -42,6 +43,9 @@ export type Permission =
   | "docs:write"
   | "consultations:read"
   | "consultations:write"
+  | "support:read"
+  | "support:write"
+  | "support:manage"
 
 export type Role = "student" | "instructor" | "admin" | "manager" | "support"
 
@@ -57,6 +61,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "courses:write",
     "courses:delete",
     "courses:publish",
+    "courses:approve",
     "lessons:read",
     "lessons:write",
     "lessons:delete",
@@ -87,6 +92,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "docs:write",
     "consultations:read",
     "consultations:write",
+    "support:read",
+    "support:write",
+    "support:manage",
   ],
   manager: [
     // Content + store management, no system settings
@@ -94,6 +102,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "courses:read",
     "courses:write",
     "courses:publish",
+    "courses:approve",
     "lessons:read",
     "lessons:write",
     "lessons:delete",
@@ -109,6 +118,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "docs:read",
     "consultations:read",
     "consultations:write",
+    "support:read",
+    "support:write",
+    "support:manage",
   ],
   instructor: [
     // Own courses + lessons + grading only
@@ -121,6 +133,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "challenges:read",
     "certificates:read",
     "docs:read",
+    "support:read",
+    "support:write",
   ],
   support: [
     // Users + orders + refunds, read-only settings
@@ -138,6 +152,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "settings:read",
     "docs:read",
     "consultations:read",
+    "support:read",
+    "support:write",
+    "support:manage",
   ],
   student: [
     // Normal user - no admin permissions

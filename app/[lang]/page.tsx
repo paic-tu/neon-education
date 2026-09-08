@@ -65,8 +65,9 @@ export default function HomePage() {
   useEffect(() => {
     const fetchReviews = async () => {
       try {
-        const data = await getLandingPageReviews(8)
-        setReviews(data as any)
+        const data = await getLandingPageReviews()
+        const fiveStarOnly = (data as any[]).filter((r) => Number(r.rating) === 5)
+        setReviews(fiveStarOnly)
       } catch {
       }
     }

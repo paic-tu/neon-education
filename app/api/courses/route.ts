@@ -3,7 +3,7 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { courses, users, categories, enrollments } from "@/lib/db/schema"
-import { eq, desc, sql } from "drizzle-orm"
+import { eq, desc, sql, and } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 
 export async function POST(req: Request) {
@@ -15,11 +15,20 @@ export async function POST(req: Request) {
       return new NextResponse("Unauthorized", { status: 401 })
     }
 
+    const role = (session.user as any).role || "student"
+    const isAdmin = role === "admin"
+
+    // Admins can pre-approve; instructors always start as "pending" (isApproved=false)
+    const approvalDefaults = isAdmin
+      ? { isApproved: true, approvedAt: new Date(), approvedBy: session.user.id }
+      : { isApproved: false }
+
     const [course] = await db
       .insert(courses)
       .values({
         instructorId: session.user.id,
         ...values,
+        ...approvalDefaults,
       })
       .returning()
 
@@ -70,7 +79,11 @@ export async function GET() {
       .from(courses)
       .innerJoin(users, eq(courses.instructorId, users.id))
       .leftJoin(categories, eq(courses.categoryId, categories.id))
-      .where(eq(courses.isPublished, true))
+      .where(and(
+        eq(courses.isPublished, true),
+        eq(courses.isApproved, true),
+        eq(courses.deletionRequested, false)
+      ))
       .orderBy(desc(courses.createdAt))
 
     return NextResponse.json(result)

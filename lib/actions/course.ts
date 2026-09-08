@@ -295,25 +295,51 @@ export async function completeLessonAction(courseId: string, lessonId: string) {
   }
 }
 
-export async function deleteCourseAction(courseId: string) {
+export async function deleteCourseAction(courseId: string, reason?: string) {
   try {
     const session = await auth()
     if (!session?.user?.id || (session.user.role !== "instructor" && session.user.role !== "admin")) {
       return { error: "Unauthorized" }
     }
 
-    // Verify ownership if instructor
-    if (session.user.role === "instructor") {
+    if (session.user.role === "admin") {
+      // Admin can hard-delete immediately
       const course = await db.query.courses.findFirst({
-        where: and(eq(courses.id, courseId), eq(courses.instructorId, session.user.id))
+        where: eq(courses.id, courseId)
       })
-      if (!course) return { error: "Course not found or unauthorized" }
+      if (!course) return { error: "Course not found" }
+      await db.delete(courses).where(eq(courses.id, courseId))
+      revalidatePath("/instructor/courses")
+      revalidatePath("/admin/courses")
+      revalidatePath("/admin/course-reviews")
+      return { success: true, mode: "hard-delete" as const }
     }
 
-    await db.delete(courses).where(eq(courses.id, courseId))
-    
+    // Instructor -> soft: request deletion (admin must approve first)
+    const course = await db.query.courses.findFirst({
+      where: and(eq(courses.id, courseId), eq(courses.instructorId, session.user.id))
+    })
+    if (!course) return { error: "Course not found or unauthorized" }
+
+    if (course.deletionRequested) {
+      return { error: "Deletion request already sent" }
+    }
+
+    await db.update(courses)
+      .set({
+        deletionRequested: true,
+        deletionRequestedAt: new Date(),
+        deletionRequestedReason: reason ? String(reason).slice(0, 1000) : null,
+        deletionReviewedBy: null,
+        deletionReviewedAt: null,
+        deletionRejectedReason: null,
+      })
+      .where(eq(courses.id, courseId))
+
     revalidatePath("/instructor/courses")
-    return { success: true }
+    revalidatePath(`/instructor/courses/${courseId}/settings`)
+    revalidatePath("/admin/course-reviews")
+    return { success: true, mode: "requested" as const }
   } catch (error) {
     console.error("Delete course error:", error)
     return { error: "Failed to delete course" }

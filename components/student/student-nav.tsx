@@ -12,6 +12,7 @@ import {
   Bookmark,
   User,
   Settings,
+  Headphones,
 } from "lucide-react"
 
 export function StudentNav({ isCollapsed }: { isCollapsed?: boolean }) {
@@ -65,6 +66,11 @@ export function StudentNav({ isCollapsed }: { isCollapsed?: boolean }) {
           href: "/student/bookmarks",
           label: t("bookmarks", locale),
           icon: Bookmark,
+        },
+        {
+          href: "/student/support",
+          label: isAr ? "الدعم الفني" : "Support",
+          icon: Headphones,
         },
       ],
     },
