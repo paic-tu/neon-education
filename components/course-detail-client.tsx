@@ -287,8 +287,8 @@ export function CourseDetailClient({ course, initialBookmarked, initialEnrolled 
             <div className="rounded-xl overflow-hidden border bg-card shadow-sm aspect-video relative group">
               {!isPlaying ? (
                 <div 
-                  className="w-full h-full cursor-pointer relative"
-                  onClick={() => setIsPlaying(true)}
+                  className={`w-full h-full relative ${videoUrl ? "cursor-pointer" : ""}`}
+                  onClick={() => { if (videoUrl) setIsPlaying(true) }}
                 >
                   {thumbnailUrl ? (
                     <Image
@@ -303,11 +303,13 @@ export function CourseDetailClient({ course, initialBookmarked, initialEnrolled 
                       <PlayCircle className="w-16 h-16 text-muted-foreground/50" />
                     </div>
                   )}
-                  <div className="absolute inset-0 bg-black/40 group-hover:bg-black/50 transition-colors flex items-center justify-center">
-                    <div className="w-16 h-16 rounded-full bg-background/90 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                      <Play className="w-6 h-6 ml-1 text-primary fill-current" />
+                  {videoUrl && (
+                    <div className="absolute inset-0 bg-black/40 group-hover:bg-black/50 transition-colors flex items-center justify-center">
+                      <div className="w-16 h-16 rounded-full bg-background/90 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                        <Play className="w-6 h-6 ml-1 text-primary fill-current" />
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               ) : (
                 <div className="w-full h-full bg-black">

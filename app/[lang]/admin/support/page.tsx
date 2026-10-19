@@ -54,15 +54,21 @@ export default async function AdminSupportPage({ params }: { params: Promise<{ l
 
   let rawTickets: any[] = []
   let rawAssignees: any[] = []
-  try {
-    ;[rawTickets, rawAssignees] = await Promise.all([
-      listSupportTickets(user.id, role),
-      listSupportAssignees(),
-    ])
-  } catch (err) {
-    console.error("[ADMIN_SUPPORT_LIST] Failed to fetch data:", err)
-    rawTickets = []
-    rawAssignees = []
+  const [ticketsResult, assigneesResult] = await Promise.allSettled([
+    listSupportTickets(user.id, role),
+    listSupportAssignees(),
+  ])
+
+  if (ticketsResult.status === "fulfilled") {
+    rawTickets = ticketsResult.value
+  } else {
+    console.error("[ADMIN_SUPPORT_LIST] Failed to fetch tickets:", ticketsResult.reason)
+  }
+
+  if (assigneesResult.status === "fulfilled") {
+    rawAssignees = assigneesResult.value
+  } else {
+    console.error("[ADMIN_SUPPORT_LIST] Failed to fetch assignees:", assigneesResult.reason)
   }
 
   const tickets: AdminTicket[] = rawTickets.map((t) => ({

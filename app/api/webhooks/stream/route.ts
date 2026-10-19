@@ -5,6 +5,7 @@ import { and, eq, inArray, isNotNull } from "drizzle-orm"
 import { streamRequest, verifyStreamWebhookSignature } from "@/lib/payments/stream"
 import { sendMail } from "@/lib/mail"
 import { getSiteSettings } from "@/lib/db/queries"
+import { renderSubscriptionSuccessEmail, renderPaymentFailedEmail } from "@/lib/emails"
 
 async function fulfillOrderCourses(userId: string, orderId: string) {
   const items = await db.query.orderItems.findMany({
@@ -47,22 +48,42 @@ async function fulfillOrderCourses(userId: string, orderId: string) {
     const user = await db.query.users.findFirst({ where: eq(users.id, userId) })
     if (user?.email) {
       const settings = await getSiteSettings()
+      const { html, text } = await renderSubscriptionSuccessEmail({
+        language: "ar",
+        dashboardUrl: `${process.env.NEXT_PUBLIC_APP_URL}/ar/portal/dashboard`,
+      })
       await sendMail({
         to: user.email,
         subject: `تم الاشتراك بنجاح - ${settings.siteName}`,
-        html: `
-          <h3 style="color: #0f172a; font-size: 22px; font-weight: 800; margin-bottom: 20px;">مرحباً بك في دورتك الجديدة!</h3>
-          <p style="font-size: 16px; color: #475569;">أهلاً ${user.name}،</p>
-          <p style="font-size: 16px; color: #475569;">لقد تم تأكيد دفع طلبك رقم <strong>#${orderId.slice(0, 8)}</strong> بنجاح.</p>
-          <p style="font-size: 16px; color: #475569; margin-bottom: 30px;">يمكنك الآن البدء في رحلتك التعليمية والوصول إلى محتوى الدورات من خلال لوحة التحكم الخاصة بك.</p>
-          <div style="text-align: center;">
-            <a href="${process.env.NEXT_PUBLIC_APP_URL}/student/dashboard" style="display: inline-block; padding: 16px 32px; background-color: #0070f3; color: white; text-decoration: none; border-radius: 16px; font-weight: 700; font-size: 16px;">الانتقال إلى لوحة التحكم</a>
-          </div>
-        `
+        html,
+        text,
       })
     }
   } catch (error) {
     console.error("Error sending enrollment email:", error)
+  }
+}
+
+async function notifyPaymentFailed(userId: string) {
+  try {
+    const user = await db.query.users.findFirst({ where: eq(users.id, userId) })
+    if (user?.email) {
+      const settings = await getSiteSettings()
+      const { html, text } = await renderPaymentFailedEmail({
+        language: "ar",
+        userName: user.name || "",
+        planName: "اشتراكك",
+        billingUrl: `${process.env.NEXT_PUBLIC_APP_URL}/ar/portal/billing`,
+      })
+      await sendMail({
+        to: user.email,
+        subject: `تعذر معالجة الدفع - ${settings.siteName}`,
+        html,
+        text,
+      })
+    }
+  } catch (error) {
+    console.error("Error sending payment failed email:", error)
   }
 }
 
@@ -248,6 +269,7 @@ export async function POST(req: Request) {
           updatedAt: now,
         })
         .where(eq(orders.id, order.id))
+      await notifyPaymentFailed(order.userId)
       return NextResponse.json({ success: true })
     }
   }
@@ -259,6 +281,9 @@ export async function POST(req: Request) {
     isPaidStatus(statusRaw)
 
   if (!shouldTryFulfill) {
+    if (eventType === "PAYMENT_FAILED" || eventType === "SUBSCRIPTION_CYCLE_RENEWAL_FAILED") {
+      await notifyPaymentFailed(order.userId)
+    }
     return NextResponse.json({ success: true })
   }
 

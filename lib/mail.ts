@@ -55,9 +55,11 @@ export async function sendMail({
 }) {
   try {
     const settings = await getSiteSettings()
-    
-    // Apply Neon template if HTML is provided
-    const finalHtml = html ? getNeonEmailTemplate(html, settings.siteName) : undefined
+
+    // If the HTML is already a full document (e.g. rendered from react-email
+    // templates), send it as-is. Otherwise wrap it in the legacy template.
+    const isFullDocument = html != null && /<html[\s>]/i.test(html)
+    const finalHtml = html ? (isFullDocument ? html : getNeonEmailTemplate(html, settings.siteName)) : undefined
 
     // 1. Try Resend if API key is available
     const resendKey = process.env.RESEND_API_KEY

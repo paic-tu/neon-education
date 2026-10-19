@@ -4,6 +4,9 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { enrollments, lessons, courses, certificates } from "@/lib/db/schema"
 import { and, eq, count } from "drizzle-orm"
+import { sendMail } from "@/lib/mail"
+import { getSiteSettings } from "@/lib/db/queries"
+import { renderCourseCompletedEmail, renderErrorAlertEmail } from "@/lib/emails"
 
 const CompleteSchema = z.object({
   courseId: z.string().min(1),
@@ -97,6 +100,24 @@ export async function POST(request: Request, props: { params: Promise<{ lessonId
               issuedAt: new Date(),
             })
             .onConflictDoNothing()
+
+          // Send Course Completed Email
+          try {
+            const settings = await getSiteSettings()
+            const { html, text } = await renderCourseCompletedEmail({
+              language: "ar",
+              userName: user.name || "",
+              certificateUrl: `${process.env.NEXT_PUBLIC_APP_URL}/ar/portal/certificates`,
+            })
+            await sendMail({
+              to: user.email,
+              subject: `تهانينا! إكمال الكورس - ${settings.siteName}`,
+              html,
+              text,
+            })
+          } catch (emailErr) {
+            console.error("[v0] Error sending course completed email:", emailErr)
+          }
         }
       }
     })
@@ -109,6 +130,24 @@ export async function POST(request: Request, props: { params: Promise<{ lessonId
     })
   } catch (error) {
     console.error("[v0] Error marking lesson complete:", error)
+    // Send Error Alert Email
+    try {
+      const errUser = await getCurrentUser()
+      if (errUser?.email) {
+        const { html, text } = await renderErrorAlertEmail({
+          language: "ar",
+          supportUrl: `${process.env.NEXT_PUBLIC_APP_URL}/ar/support`,
+        })
+        await sendMail({
+          to: errUser.email,
+          subject: `حدث خطأ أثناء تحديث التقدم - ${(await getSiteSettings()).siteName}`,
+          html,
+          text,
+        })
+      }
+    } catch (emailErr) {
+      console.error("[v0] Error sending error alert email:", emailErr)
+    }
     return NextResponse.json({ error: "Failed to update lesson completion" }, { status: 500 })
   }
 }

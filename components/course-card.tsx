@@ -32,7 +32,7 @@ export function CourseCard({ course, hideBookmark = false, isPreview = false }: 
   const isFree = course.is_free || course.isFree || price === 0
   const enrollmentCount = course.enrollment_count || course.enrollmentCount || 0
   const thumbnailUrl = course.thumbnail_url || course.thumbnailUrl || "/placeholder.svg?height=200&width=300&query=course"
-  const videoUrl = course.video_url || course.videoUrl
+  const videoUrl = course.video_url || course.videoUrl || course.preview_video_url || course.previewVideoUrl
   const courseId = course.id
   const isLive = course.isLive || course.is_live || false
   const isStreaming = course.isStreaming || course.is_streaming || false

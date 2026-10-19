@@ -5,6 +5,9 @@ import { eq } from "drizzle-orm"
 import { requirePermission } from "@/lib/rbac/require-permission"
 import { z } from "zod"
 import { logAudit, type AuditResource } from "@/lib/audit/audit-logger"
+import { sendMail } from "@/lib/mail"
+import { getSiteSettings } from "@/lib/db/queries"
+import { renderEmailChangedEmail } from "@/lib/emails"
 
 const updateUserSchema = z.object({
   name: z.string().min(1).optional(),
@@ -88,6 +91,33 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
         after: result[0],
       },
     })
+
+    // Send Email Changed notification if email was modified
+    if (data.email !== undefined && existing[0].email !== data.email) {
+      try {
+        const settings = await getSiteSettings()
+        const { html, text } = await renderEmailChangedEmail({
+          language: "ar",
+          supportUrl: `${process.env.NEXT_PUBLIC_APP_URL}/ar/support`,
+        })
+        // Notify old email
+        await sendMail({
+          to: existing[0].email,
+          subject: `تم تغيير بريدك الإلكتروني - ${settings.siteName}`,
+          html,
+          text,
+        })
+        // Notify new email
+        await sendMail({
+          to: data.email,
+          subject: `تم تغيير بريدك الإلكتروني - ${settings.siteName}`,
+          html,
+          text,
+        })
+      } catch (emailErr) {
+        console.error("[v0] Error sending email changed notification:", emailErr)
+      }
+    }
 
     const { passwordHash, ...user } = result[0]
     return NextResponse.json(user)

@@ -15,7 +15,7 @@ import {
 import { relations } from "drizzle-orm"
 
 // Enums
-export const roleEnum = pgEnum("role", ["student", "instructor", "admin"])
+export const roleEnum = pgEnum("role", ["student", "instructor", "admin", "manager", "support"])
 export const difficultyEnum = pgEnum("difficulty", ["beginner", "intermediate", "advanced"])
 export const lessonTypeEnum = pgEnum("lesson_type", ["video", "article", "quiz", "assignment", "resource"])
 export const videoProviderEnum = pgEnum("video_provider", ["upload", "youtube", "vimeo", "mux"])

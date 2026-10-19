@@ -6,6 +6,9 @@ import { eq, ilike } from "drizzle-orm"
 import bcrypt from "bcryptjs"
 import { z } from "zod"
 import { authConfig } from "@/lib/auth.config"
+import { sendMail } from "@/lib/mail"
+import { getSiteSettings } from "@/lib/db/queries"
+import { renderLoginAlertEmail } from "@/lib/emails"
 
 if (!process.env.AUTH_SECRET && process.env.NEXTAUTH_SECRET) {
   process.env.AUTH_SECRET = process.env.NEXTAUTH_SECRET
@@ -79,6 +82,29 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
           if (passwordsMatch) {
             console.log("[Auth] Password match, returning user:", user.id)
+
+            // Send Login Alert Email
+            try {
+              const settings = await getSiteSettings()
+              const { html, text } = await renderLoginAlertEmail({
+                language: "ar",
+                userName: user.name || "",
+                deviceName: "متصفح ويب",
+                loginLocation: "السعودية",
+                loginTime: new Date().toLocaleString("ar-SA"),
+                securityUrl: `${process.env.NEXT_PUBLIC_APP_URL}/ar/portal/settings`,
+                supportEmail: settings.supportEmail || "support@neonedu.org",
+              })
+              await sendMail({
+                to: user.email,
+                subject: `تنبيه: تسجيل دخول جديد - ${settings.siteName}`,
+                html,
+                text,
+              })
+            } catch (emailErr) {
+              console.error("[Auth] Error sending login alert email:", emailErr)
+            }
+
             return {
               id: user.id,
               email: user.email,

@@ -6,6 +6,8 @@ import { auth } from "@/lib/auth"
 import { hasPermission } from "@/lib/rbac/permissions"
 import { z } from "zod"
 import { listSupportTickets } from "@/lib/db/support-queries"
+import { sendMail } from "@/lib/mail"
+import { renderSupportTicketEmail } from "@/lib/emails"
 
 const createTicketSchema = z.object({
   subjectAr: z.string().min(3).max(255),
@@ -95,6 +97,26 @@ export async function POST(request: NextRequest) {
         relatedCourseId: data.relatedCourseId || null,
       })
       .returning()
+
+    // Send confirmation email to the user
+    try {
+      const userEmail = session.user.email
+      if (userEmail) {
+        const lang = (session.user as any).language === "en" ? "en" : "ar"
+        const { html, text } = await renderSupportTicketEmail({
+          language: lang,
+          ticketId: ticket.id,
+        })
+        await sendMail({
+          to: userEmail,
+          subject: lang === "ar" ? "تم استلام تذكرتك في منصة نيون" : "We received your support request on Neon",
+          html,
+          text,
+        })
+      }
+    } catch (emailError) {
+      console.error("[SUPPORT_TICKETS_POST] email error:", emailError)
+    }
 
     return NextResponse.json({ ticket }, { status: 201 })
   } catch (error) {

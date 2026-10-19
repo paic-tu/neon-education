@@ -9,6 +9,14 @@ import bcrypt from "bcryptjs"
 import { z } from "zod"
 import { sendMail } from "@/lib/mail"
 import { getSiteSettings } from "@/lib/db/queries"
+import {
+  renderResetPasswordEmail,
+  renderPasswordChangedEmail,
+  renderWelcomeEmail,
+  renderVerifyEmail,
+  renderVerificationCodeEmail,
+  renderAccountCreatedEmail,
+} from "@/lib/emails"
 import crypto from "crypto"
 
 export async function forgotPasswordAction(formData: FormData) {
@@ -47,19 +55,20 @@ export async function forgotPasswordAction(formData: FormData) {
     const lang = (formData.get("lang") as string) || "ar"
     const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL}/${lang}/auth/reset-password?token=${token}`
 
+    const { html, text } = await renderResetPasswordEmail({
+      language: lang === "ar" ? "ar" : "en",
+      resetPasswordUrl: resetUrl,
+      userName: user.name,
+      expirationMinutes: 60,
+    })
+
     await sendMail({
       to: email,
-      subject: `إعادة تعيين كلمة المرور - ${settings.siteName}`,
-      html: `
-        <h3 style="color: #0f172a; font-size: 22px; font-weight: 800; margin-bottom: 20px;">طلب إعادة تعيين كلمة المرور</h3>
-        <p style="font-size: 16px; color: #475569;">أهلاً ${user.name}،</p>
-        <p style="font-size: 16px; color: #475569;">لقد تلقينا طلباً لإعادة تعيين كلمة المرور الخاصة بك في <strong>${settings.siteName}</strong>.</p>
-        <p style="font-size: 16px; color: #475569; margin-bottom: 30px;">يمكنك إعادة تعيين كلمة المرور من خلال الضغط على الزر أدناه:</p>
-        <div style="text-align: center; margin-bottom: 30px;">
-          <a href="${resetUrl}" style="display: inline-block; padding: 16px 32px; background-color: #0070f3; color: white; text-decoration: none; border-radius: 16px; font-weight: 700; font-size: 16px;">إعادة تعيين كلمة المرور</a>
-        </div>
-        <p style="font-size: 14px; color: #64748b;">هذا الرابط صالح لمدة ساعة واحدة فقط. إذا لم تطلب هذا، يمكنك تجاهل هذا البريد الإلكتروني.</p>
-      `
+      subject: lang === "ar"
+        ? `إعادة تعيين كلمة المرور - ${settings.siteName}`
+        : `Reset your password - ${settings.siteName}`,
+      html,
+      text,
     })
 
     return { success: true }
@@ -105,15 +114,15 @@ export async function resetPasswordAction(formData: FormData) {
     // Send Confirmation Email
     try {
       const settings = await getSiteSettings()
+      const { html, text } = await renderPasswordChangedEmail({
+        language: "ar",
+        supportEmail: settings.supportEmail || "support@neonedu.org",
+      })
       await sendMail({
         to: resetToken.email,
         subject: `تم تغيير كلمة المرور بنجاح - ${settings.siteName}`,
-        html: `
-          <h3 style="color: #0f172a; font-size: 22px; font-weight: 800; margin-bottom: 20px;">تنبيه أمني: تم تغيير كلمة المرور</h3>
-          <p style="font-size: 16px; color: #475569;">أهلاً،</p>
-          <p style="font-size: 16px; color: #475569;">نود إعلامك بأنه تم تغيير كلمة المرور الخاصة بحسابك في <strong>${settings.siteName}</strong> بنجاح.</p>
-          <p style="font-size: 16px; color: #475569; margin-top: 20px;">إذا لم تقم بهذا التغيير، يرجى التواصل مع فريق الدعم الفني فوراً لحماية حسابك.</p>
-        `
+        html,
+        text,
       })
     } catch (error) {
       console.error("Error sending password reset confirmation email:", error)
@@ -212,21 +221,63 @@ export async function registerAction(formData: FormData) {
     // Send Welcome Email
     try {
       const settings = await getSiteSettings()
+      const { html, text } = await renderWelcomeEmail({
+        language: "ar",
+        userName: name,
+        dashboardUrl: `${process.env.NEXT_PUBLIC_APP_URL}/ar/auth/login`,
+      })
       await sendMail({
         to: email,
         subject: `مرحباً بك في ${settings.siteName}!`,
-        html: `
-          <h3 style="color: #0f172a; font-size: 22px; font-weight: 800; margin-bottom: 20px;">أهلاً بك يا ${name}!</h3>
-          <p style="font-size: 16px; color: #475569;">يسعدنا جداً انضمامك إلى منصة <strong>${settings.siteName}</strong>.</p>
-          <p style="font-size: 16px; color: #475569;">لقد تم إنشاء حسابك بنجاح، ويمكنك الآن البدء في استكشاف الدورات التدريبية المتاحة.</p>
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.NEXT_PUBLIC_APP_URL}/auth/login" style="display: inline-block; padding: 16px 32px; background-color: #0070f3; color: white; text-decoration: none; border-radius: 16px; font-weight: 700; font-size: 16px;">تسجيل الدخول إلى حسابك</a>
-          </div>
-          <p style="font-size: 14px; color: #64748b;">نتمنى لك رحلة تعليمية ممتعة ومفيدة!</p>
-        `
+        html,
+        text,
+      })
+
+      // Send Account Created Email
+      const accountData = await renderAccountCreatedEmail({
+        language: "ar",
+        userName: name,
+        dashboardUrl: `${process.env.NEXT_PUBLIC_APP_URL}/ar/portal/dashboard`,
+      })
+      await sendMail({
+        to: email,
+        subject: `تم إنشاء حسابك بنجاح - ${settings.siteName}`,
+        html: accountData.html,
+        text: accountData.text,
+      })
+
+      // Send Email Verification Email
+      const verificationCode = crypto.randomInt(100000, 999999).toString()
+      const verifyUrl = `${process.env.NEXT_PUBLIC_APP_URL}/ar/auth/verify?email=${encodeURIComponent(email)}`
+
+      const verifyData = await renderVerifyEmail({
+        language: "ar",
+        verificationUrl: verifyUrl,
+        userName: name,
+        expirationMinutes: 30,
+      })
+      await sendMail({
+        to: email,
+        subject: `أكّد بريدك الإلكتروني - ${settings.siteName}`,
+        html: verifyData.html,
+        text: verifyData.text,
+      })
+
+      // Send Verification Code Email (OTP)
+      const codeData = await renderVerificationCodeEmail({
+        language: "ar",
+        verificationCode,
+        userName: name,
+        expirationMinutes: 10,
+      })
+      await sendMail({
+        to: email,
+        subject: `رمز التحقق الخاص بك - ${settings.siteName}`,
+        html: codeData.html,
+        text: codeData.text,
       })
     } catch (error) {
-      console.error("Error sending welcome email:", error)
+      console.error("Error sending registration emails:", error)
     }
 
     return { success: true }
