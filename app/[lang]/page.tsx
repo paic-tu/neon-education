@@ -21,7 +21,6 @@ import { HeroSplineGalaxy } from "@/components/hero-spline-galaxy"
 import { NeonLogoSpline } from "@/components/neon-logo-spline"
 import { StatsCard3D } from "@/components/stats-card-3d"
 import { WhyNeonFlexCards } from "@/components/why-neon-flex-cards"
-import Script from "next/script"
 import { PaymentMethodIcons } from "@/components/payment-methods-section"
 
 export default function HomePage() {
@@ -29,20 +28,6 @@ export default function HomePage() {
   const isRTL = language === "ar"
   const { user, isAuthenticated } = useAuth()
   const router = useRouter()
-  const baseUrl = "https://neonedu.org"
-  const organizationLd = {
-    "@context": "https://schema.org",
-    "@type": "Organization",
-    "@id": `${baseUrl}/#organization`,
-    name: "Neon",
-    alternateName: "نيون",
-    url: baseUrl,
-    logo: `${baseUrl}/logo.svg`,
-    description:
-      language === "ar"
-        ? "منصة نيون التعليمية للدورات والشهادات المعتمدة في البرمجة والتقنية."
-        : "Neon educational platform for accredited courses and certificates in programming and technology.",
-  }
   const [stats, setStats] = useState({
     courses: 0,
     students: 0,
@@ -83,10 +68,6 @@ export default function HomePage() {
   return (
     <div className="min-h-screen relative">
       <NavBar />
-      <Script id="ld-org" type="application/ld+json" strategy="afterInteractive">
-        {JSON.stringify(organizationLd)}
-      </Script>
-
       <main className="overflow-hidden">
         <section className="relative overflow-hidden pt-20 pb-20 sm:pt-24 sm:pb-28 lg:pt-20 lg:pb-36">
           <div data-neon-glow-anchor="" className="pointer-events-none absolute inset-0" />
@@ -94,6 +75,9 @@ export default function HomePage() {
             <Reveal>
             <div className="max-w-5xl mx-auto text-center space-y-7 sm:space-y-8">
               <h1 className="text-4xl sm:text-6xl lg:text-7xl font-bold text-balance leading-[1.05] tracking-normal">
+                <span className="sr-only">
+                  {isRTL ? "منصة نيون التعليمية" : "Neon Learning Platform"}
+                </span>
                 <NeonLogoSpline
                   className="relative mx-auto -mt-4 mb-4 aspect-square w-[clamp(320px,85vw,380px)] sm:mt-0 sm:mb-0 sm:w-[400px]"
                 />
@@ -127,8 +111,8 @@ export default function HomePage() {
 
               <p className="text-base sm:text-lg md:text-2xl text-muted-foreground text-balance max-w-3xl mx-auto -mt-2 sm:-mt-8 leading-7 sm:leading-8 md:leading-9">
                 {isRTL
-                  ? "اكتشف دورات تعليمية متميزة واحصل على شهادة إتمام معتمدة من المنصة مع أفضل المدربين"
-                  : "Discover premium educational courses and earn certified certificates from the best instructors "}
+                  ? "منصة نيون التعليمية تقدّم دورات متميزة وشهادات إتمام معتمدة مع أفضل المدربين"
+                  : "Neon Learning Platform offers premium courses and certified completion certificates taught by the best instructors"}
               </p>
 
               <div className="flex w-full flex-row flex-wrap items-center justify-center gap-3 pt-3 sm:gap-4 sm:pt-5">
@@ -535,7 +519,7 @@ export default function HomePage() {
           <div className="grid gap-8 sm:gap-10 md:grid-cols-3">
             <div className="space-y-3">
               <div className="text-2xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-                {isRTL ? "نيون" : "Neon"}
+                {isRTL ? "منصة نيون التعليمية" : "Neon Learning Platform"}
               </div>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 {isRTL
@@ -620,8 +604,8 @@ export default function HomePage() {
             </p>
             <p className="text-sm text-muted-foreground text-center">
               {isRTL
-                ? "© 2025 Neon | نيون التعليمية. جميع الحقوق محفوظة."
-                : "© 2025 Neon Educational Platform. All rights reserved."}
+                ? "© 2025 منصة نيون التعليمية. جميع الحقوق محفوظة."
+                : "© 2025 Neon Learning Platform. All rights reserved."}
             </p>
           </div>
         </div>

@@ -1,6 +1,7 @@
 {
-  "name": "Neon Learning Platform",
-  "short_name": "Neon",
+  "name": "منصة نيون التعليمية",
+  "short_name": "نيون التعليمية",
+  "description": "منصة نيون التعليمية للدورات والشهادات التقنية المعتمدة",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#050609",

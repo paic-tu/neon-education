@@ -18,27 +18,33 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
 
   return {
     metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://neonedu.org'),
+    applicationName: "منصة نيون التعليمية",
     title: {
-      default: isAr ? "Neon | نيون التعليمية - منصة التعلم الإلكتروني" : "Neon | E-Learning Platform",
-      template: isAr ? "%s | Neon - نيون" : "%s | Neon"
+      default: isAr
+        ? "منصة نيون التعليمية | دورات وشهادات تقنية معتمدة"
+        : "Neon Learning Platform | Accredited Tech Courses & Certificates",
+      template: isAr ? "%s | منصة نيون التعليمية" : "%s | Neon Learning Platform"
     },
     description: isAr 
-      ? "منصة نيون التعليمية للدورات والشهادات المعتمدة في البرمجة والتقنية. انضم إلينا لتعلم مهارات المستقبل." 
-      : "Neon educational platform for accredited courses and certificates in programming and technology. Join us to learn future skills.",
+      ? "منصة نيون التعليمية منصة تعليم إلكتروني عربية تقدّم دورات وشهادات تقنية معتمدة في البرمجة وتطوير الويب وتحليل البيانات، بمسارات عملية يقدّمها مدربون خبراء." 
+      : "Neon Learning Platform is an Arabic e-learning platform offering accredited tech courses and certificates in programming, web development and data analysis, taught by expert instructors.",
     keywords: [
-      "تعليم", "دورات", "برمجة", "نيون", "education", "courses", "programming", "neon", 
-      "web development", "tech", "learning platform", "online courses", "elearning", "منصة تعليمية"
+      "منصة نيون التعليمية", "نيون التعليمية", "منصة نيون", "دورات اونلاين", "شهادات معتمدة",
+      "تعليم", "دورات", "برمجة", "نيون", "education", "courses", "programming", "neon",
+      "Neon Learning Platform", "web development", "tech", "learning platform", "online courses", "elearning", "منصة تعليمية"
     ],
-    authors: [{ name: "Neon Team" }],
-    creator: "Neon Team",
-    publisher: "Neon Team",
+    authors: [{ name: "منصة نيون التعليمية" }],
+    creator: "منصة نيون التعليمية",
+    publisher: "منصة نيون التعليمية",
     icons: {
       icon: [
-        { url: '/icon.svg', type: 'image/svg+xml' },
-        { url: '/icon-dark-32x32.png', sizes: '32x32', type: 'image/png', media: '(prefers-color-scheme: dark)' },
-        { url: '/icon-light-32x32.png', sizes: '32x32', type: 'image/png', media: '(prefers-color-scheme: light)' },
+        { url: '/favicon.ico', sizes: 'any' },
+        { url: '/icons/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+        { url: '/icons/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+        { url: '/icons/favicon-48x48.png', sizes: '48x48', type: 'image/png' },
+        { url: '/icons/favicon-96x96.png', sizes: '96x96', type: 'image/png' },
       ],
-      shortcut: '/icon.svg',
+      shortcut: '/favicon.ico',
       apple: [
         { url: '/apple-icon.png', sizes: '180x180', type: 'image/png' },
       ],
@@ -56,27 +62,27 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
       locale: isAr ? "ar_SA" : "en_US",
       alternateLocale: isAr ? ["en_US"] : ["ar_SA"],
       url: `/${lang}`,
-      title: isAr ? "Neon | نيون التعليمية" : "Neon | E-Learning Platform",
+      title: isAr ? "منصة نيون التعليمية" : "Neon Learning Platform",
       description: isAr 
-        ? "منصة نيون التعليمية للدورات والشهادات المعتمدة في البرمجة والتقنية" 
-        : "Neon educational platform for accredited courses and certificates in programming and technology",
-      siteName: isAr ? "Neon | نيون" : "Neon",
+        ? "منصة نيون التعليمية منصة تعليم إلكتروني عربية تقدّم دورات وشهادات تقنية معتمدة في البرمجة والتقنية" 
+        : "Neon Learning Platform is an Arabic e-learning platform offering accredited tech courses and certificates",
+      siteName: isAr ? "منصة نيون التعليمية" : "Neon Learning Platform",
       images: [
         {
           url: '/og-image.png',
           width: 1200,
           height: 630,
-          alt: 'Neon Learning Platform',
+          alt: 'منصة نيون التعليمية',
         },
       ],
     },
     twitter: {
       card: "summary_large_image",
-      title: isAr ? "Neon | نيون التعليمية" : "Neon | E-Learning Platform",
+      title: isAr ? "منصة نيون التعليمية" : "Neon Learning Platform",
       description: isAr 
-        ? "منصة نيون التعليمية للدورات والشهادات المعتمدة" 
-        : "Neon educational platform for accredited courses and certificates",
-      creator: "@neon_edu", // Update if there is a real handle
+        ? "منصة نيون التعليمية منصة تعليم إلكتروني عربية تقدّم دورات وشهادات تقنية معتمدة" 
+        : "Neon Learning Platform offers accredited tech courses and certificates",
+      creator: "@eduneonsa",
       images: ['/og-image.png'],
     },
     robots: {
@@ -111,8 +117,45 @@ export default async function LangLayout({
   children: React.ReactNode
   params: Promise<{ lang: string }>
 }>) {
+  const { lang } = await params
+  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://neonedu.org').replace(/\/+$/, '')
+
+  const structuredData = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'EducationalOrganization',
+        '@id': `${baseUrl}/#organization`,
+        name: 'منصة نيون التعليمية',
+        alternateName: 'Neon Learning Platform',
+        url: baseUrl,
+        logo: {
+          '@type': 'ImageObject',
+          url: `${baseUrl}/icons/icon-512.png`,
+        },
+        sameAs: [
+          'https://www.linkedin.com/company/neon-edu-sa/',
+          'https://x.com/eduneonsa',
+        ],
+      },
+      {
+        '@type': 'WebSite',
+        '@id': `${baseUrl}/#website`,
+        url: baseUrl,
+        name: 'منصة نيون التعليمية',
+        alternateName: 'Neon Learning Platform',
+        inLanguage: lang === 'en' ? 'en-US' : 'ar-SA',
+        publisher: { '@id': `${baseUrl}/#organization` },
+      },
+    ],
+  }
+
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
       {children}
     </>
   )
