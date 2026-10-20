@@ -5,7 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Send, Lock } from "lucide-react"
+import { Send, Lock, MessageSquarePlus, CornerDownLeft, ShieldCheck, Headset, GraduationCap, User } from "lucide-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -29,6 +29,39 @@ interface TicketMessagesProps {
   initialMessages: Message[]
   currentUserId: string
   showInternalNote?: boolean
+}
+
+const roleMeta: Record<string, { ar: string; en: string; className: string; icon: typeof User }> = {
+  admin: {
+    ar: "مدير",
+    en: "Admin",
+    className: "border-primary/30 bg-primary/10 text-primary",
+    icon: ShieldCheck,
+  },
+  manager: {
+    ar: "مدير",
+    en: "Manager",
+    className: "border-primary/30 bg-primary/10 text-primary",
+    icon: ShieldCheck,
+  },
+  support: {
+    ar: "دعم فني",
+    en: "Support",
+    className: "border-accent/30 bg-accent/10 text-accent",
+    icon: Headset,
+  },
+  instructor: {
+    ar: "مدرب",
+    en: "Instructor",
+    className: "border-cyan-500/30 bg-cyan-500/10 text-cyan-600 dark:text-cyan-300",
+    icon: GraduationCap,
+  },
+  student: {
+    ar: "طالب",
+    en: "Student",
+    className: "border-border/60 bg-muted/60 text-muted-foreground",
+    icon: User,
+  },
 }
 
 export function TicketMessages({ ticketId, lang, initialMessages, currentUserId, showInternalNote = false }: TicketMessagesProps) {
@@ -82,68 +115,98 @@ export function TicketMessages({ ticketId, lang, initialMessages, currentUserId,
     }
   }
 
-  const roleLabel = (role: string) => {
-    const map: Record<string, { ar: string; en: string }> = {
-      admin: { ar: "مدير", en: "Admin" },
-      manager: { ar: "مدير", en: "Manager" },
-      support: { ar: "دعم فني", en: "Support" },
-      instructor: { ar: "مدرب", en: "Instructor" },
-      student: { ar: "طالب", en: "Student" },
-    }
-    return map[role]?.[isAr ? "ar" : "en"] || role
-  }
+  const getRole = (role: string) =>
+    roleMeta[role] || { ar: role, en: role, className: "border-border/60 bg-muted/60 text-muted-foreground", icon: User }
 
   return (
-    <div className="flex flex-col h-[600px] border rounded-lg overflow-hidden bg-card">
-      <ScrollArea ref={scrollRef} className="flex-1 p-4">
-        {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center py-16 text-muted-foreground">
-            <p className="text-sm">{isAr ? "لا توجد رسائل بعد" : "No messages yet"}</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {messages.map((msg) => {
-              const isMine = msg.userId === currentUserId
-              return (
-                <div key={msg.id} className={`flex gap-3 ${isMine ? (isAr ? "flex-row-reverse" : "") : ""}`}>
-                  <Avatar className="w-9 h-9 shrink-0">
-                    <AvatarImage src={msg.userAvatar || undefined} />
-                    <AvatarFallback>{msg.userName?.[0] || "U"}</AvatarFallback>
-                  </Avatar>
-                  <div className={`flex-1 max-w-[80%] ${isMine ? (isAr ? "text-right" : "text-right") : ""}`}>
-                    <div className={`flex items-center gap-2 mb-1 flex-wrap ${isMine ? (isAr ? "justify-start" : "justify-end") : ""}`}>
-                      <span className="font-medium text-sm">{msg.userName}</span>
-                      <Badge variant="outline" className="text-xs px-2 py-0 h-5 bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300 dark:border-indigo-800">
-                        {roleLabel(msg.userRole)}
-                      </Badge>
-                      {msg.isInternal && (
-                        <Badge variant="secondary" className="text-xs px-2 py-0 h-5 gap-1">
-                          <Lock className="h-3 w-3" />
-                          {isAr ? "داخلي" : "Internal"}
-                        </Badge>
-                      )}
-                      <span className="text-xs text-muted-foreground">{formatDate(msg.createdAt)}</span>
-                    </div>
-                    <div
-                      className={`inline-block p-3 rounded-lg text-sm whitespace-pre-wrap break-words ${
-                        msg.isInternal
-                          ? "bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200"
-                          : isMine
-                          ? "bg-indigo-500 text-white"
-                          : "bg-muted"
+    <div className="relative overflow-hidden rounded-3xl border border-border/60 bg-card/50 backdrop-blur">
+      <div className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-primary/10 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-20 -left-16 h-48 w-48 rounded-full bg-accent/10 blur-3xl" />
+
+      <ScrollArea ref={scrollRef} className="relative h-[520px]">
+        <div className="p-4 sm:p-6">
+          {messages.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 py-24 text-center">
+              <div className="relative flex size-14 items-center justify-center rounded-2xl border border-border/60 bg-background/60">
+                <MessageSquarePlus className="size-6 text-muted-foreground" />
+                <span className="absolute -inset-1 -z-10 rounded-3xl bg-primary/20 blur-xl" />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {isAr ? "لا توجد رسائل بعد" : "No messages yet"}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {messages.map((msg) => {
+                const isMine = msg.userId === currentUserId
+                const role = getRole(msg.userRole)
+                const RoleIcon = role.icon
+                return (
+                  <div
+                    key={msg.id}
+                    className={`flex gap-3 ${isMine ? "flex-row-reverse" : ""}`}
+                  >
+                    <Avatar
+                      className={`size-9 shrink-0 ring-2 ${
+                        isMine ? "ring-primary/30" : "ring-border/60"
                       }`}
-                      dir="auto"
                     >
-                      {msg.content}
+                      <AvatarImage src={msg.userAvatar || undefined} />
+                      <AvatarFallback
+                        className={
+                          isMine
+                            ? "bg-gradient-to-br from-primary to-accent text-primary-foreground text-xs font-semibold"
+                            : "bg-muted text-muted-foreground text-xs font-semibold"
+                        }
+                      >
+                        {msg.userName?.charAt(0)?.toUpperCase() || "U"}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className={`max-w-[80%] flex-1 ${isMine ? "text-right" : ""}`}>
+                      <div
+                        className={`mb-1.5 flex flex-wrap items-center gap-2 ${
+                          isMine ? (isAr ? "justify-start" : "justify-end") : ""
+                        }`}
+                      >
+                        <span className="text-sm font-semibold">{msg.userName}</span>
+                        <Badge variant="outline" className={`h-5 gap-1 px-2 py-0 text-xs ${role.className}`}>
+                          <RoleIcon className="size-3" />
+                          {role[isAr ? "ar" : "en"]}
+                        </Badge>
+                        {msg.isInternal && (
+                          <Badge
+                            variant="outline"
+                            className="h-5 gap-1 border-amber-500/30 bg-amber-500/10 px-2 py-0 text-xs text-amber-600 dark:text-amber-300"
+                          >
+                            <Lock className="size-3" />
+                            {isAr ? "داخلي" : "Internal"}
+                          </Badge>
+                        )}
+                        <span className="text-xs text-muted-foreground">{formatDate(msg.createdAt)}</span>
+                      </div>
+                      <div
+                        className={`relative inline-block max-w-full whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                          msg.isInternal
+                            ? "border border-amber-500/30 bg-amber-500/10 text-amber-900 shadow-sm shadow-amber-500/10 dark:text-amber-200"
+                            : isMine
+                            ? "bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-lg shadow-primary/20"
+                            : "border border-border/60 bg-muted/60 text-foreground backdrop-blur"
+                        }`}
+                        dir="auto"
+                      >
+                        {msg.content}
+                      </div>
                     </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
+                )
+              })}
+            </div>
+          )}
+        </div>
       </ScrollArea>
-      <div className="border-t p-4 bg-background space-y-3">
+
+      <div className="relative space-y-3 border-t border-border/60 bg-background/40 p-4 backdrop-blur">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
         {showInternalNote && (
           <div className="flex items-center gap-2">
             <Checkbox
@@ -151,19 +214,22 @@ export function TicketMessages({ ticketId, lang, initialMessages, currentUserId,
               checked={isInternal}
               onCheckedChange={(v) => setIsInternal(Boolean(v))}
             />
-            <Label htmlFor="internal-note" className="text-xs text-muted-foreground cursor-pointer flex items-center gap-1">
-              <Lock className="h-3 w-3" />
+            <Label
+              htmlFor="internal-note"
+              className="flex cursor-pointer items-center gap-1 text-xs text-muted-foreground"
+            >
+              <Lock className="size-3" />
               {isAr ? "ملاحظة داخلية (لا تظهر للعميل)" : "Internal note (not visible to customer)"}
             </Label>
           </div>
         )}
-        <div className="flex gap-2 items-end">
+        <div className="flex items-end gap-2">
           <Textarea
             value={reply}
             onChange={(e) => setReply(e.target.value)}
             placeholder={isAr ? "اكتب ردك هنا..." : "Type your reply here..."}
             rows={3}
-            className="resize-none"
+            className="resize-none border-border/60 bg-background/60 backdrop-blur focus-visible:ring-primary/40"
             onKeyDown={(e) => {
               if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
                 e.preventDefault()
@@ -174,13 +240,16 @@ export function TicketMessages({ ticketId, lang, initialMessages, currentUserId,
           <Button
             onClick={handleSend}
             disabled={loading || !reply.trim()}
-            className="bg-indigo-500 hover:bg-indigo-600 text-white h-10 shrink-0"
+            className="h-[76px] w-12 shrink-0 bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-lg shadow-primary/20 hover:opacity-90"
             size="icon"
           >
-            <Send className="h-4 w-4" />
+            <Send className="size-4" />
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">{isAr ? "اضغط Ctrl+Enter للإرسال" : "Press Ctrl+Enter to send"}</p>
+        <p className="flex items-center gap-1 text-xs text-muted-foreground">
+          <CornerDownLeft className="size-3" />
+          {isAr ? "اضغط Ctrl+Enter للإرسال" : "Press Ctrl+Enter to send"}
+        </p>
       </div>
     </div>
   )

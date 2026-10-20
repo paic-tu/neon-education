@@ -164,7 +164,7 @@ export async function listTicketMessages(
     .orderBy(supportTicketMessages.createdAt)
     .limit(500)
 
-  return (rows.filter((r) => (showInternal ? true : !r.isInternal)) as unknown) as SupportTicketMessageRow[]
+  return (rows.filter((r: SupportTicketMessageRow) => (showInternal ? true : !r.isInternal)) as unknown) as SupportTicketMessageRow[]
 }
 
 export async function getSupportTicketById(
