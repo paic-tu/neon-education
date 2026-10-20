@@ -80,7 +80,7 @@ export default function StorePage() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2 text-foreground">{t("store", language)}</h1>
           <p className="text-foreground/75">
-            {language === "ar" ? "احصل على منتجات نيون التعليمية" : "Get Neon educational products"}
+            {language === "ar" ? "احصل على منتجات منصة نيون" : "Get Neon products"}
           </p>
         </div>
 

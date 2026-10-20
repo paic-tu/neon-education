@@ -69,12 +69,12 @@ export default async function VerifyPage({
           <div className="container mx-auto px-4">
             <div className="text-center space-y-4">
               <div className="text-2xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-                {isAr ? "نيون" : "Neon"}
+                {isAr ? "منصة نيون التعليمية" : "Neon Learning Platform"}
               </div>
               <p className="text-sm text-foreground/70">
                 {isAr
-                  ? "© 2025 Neon | نيون التعليمية. جميع الحقوق محفوظة."
-                  : "© 2025 Neon Educational Platform. All rights reserved."}
+                  ? "© 2025 منصة نيون التعليمية. جميع الحقوق محفوظة."
+                  : "© 2025 Neon Learning Platform. All rights reserved."}
               </p>
             </div>
           </div>
@@ -259,12 +259,12 @@ export default async function VerifyPage({
         <div className="container mx-auto px-4">
           <div className="text-center space-y-4">
             <div className="text-2xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-              {isAr ? "نيون" : "Neon"}
+              {isAr ? "منصة نيون التعليمية" : "Neon Learning Platform"}
             </div>
             <p className="text-sm text-foreground/70">
               {isAr
-                ? "© 2025 Neon | نيون التعليمية. جميع الحقوق محفوظة."
-                : "© 2025 Neon Educational Platform. All rights reserved."}
+                ? "© 2025 منصة نيون التعليمية. جميع الحقوق محفوظة."
+                : "© 2025 Neon Learning Platform. All rights reserved."}
             </p>
           </div>
         </div>
