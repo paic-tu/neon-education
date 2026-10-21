@@ -1,7 +1,9 @@
 import { MetadataRoute } from "next"
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://neonedu.org").replace(/\/+$/, "")
+  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://neonedu.org")
+    .replace(/^http:\/\//i, "https://")
+    .replace(/\/+$/, "")
   const now = new Date()
 
   const corePaths = [
@@ -42,4 +44,3 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   return urls
 }
-
