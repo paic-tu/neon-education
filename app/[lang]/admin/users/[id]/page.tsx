@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import { UserEditForm } from "@/components/admin/user-edit-form"
+import { UserResetPasswordButton } from "@/components/admin/user-reset-password-button"
+import { hasPermission } from "@/lib/rbac/permissions"
 
 export default async function UserDetailPage({ params }: { params: Promise<{ id: string; lang: string }> }) {
   const { id, lang } = await params
@@ -17,7 +19,8 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
     redirect(`/${lang}/admin/users/new`)
   }
 
-  await requirePermission("users:read")
+  const currentUser = await requirePermission("users:read")
+  const canResetPassword = hasPermission(currentUser.role as any, "users:write")
 
   let userId: string = id
   
@@ -53,9 +56,14 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
           <h1 className="text-3xl font-bold">{user.name}</h1>
           <p className="text-muted-foreground">{user.email}</p>
         </div>
-        <Badge variant={user.role === "admin" ? "default" : "secondary"} className="ml-auto">
-          {user.role}
-        </Badge>
+        <div className="ml-auto flex items-center gap-3">
+          {canResetPassword && (
+            <UserResetPasswordButton userId={user.id} userEmail={user.email} />
+          )}
+          <Badge variant={user.role === "admin" ? "default" : "secondary"}>
+            {user.role}
+          </Badge>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">

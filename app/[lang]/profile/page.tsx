@@ -11,8 +11,8 @@ export default async function ProfileRedirectPage({ params }: { params: Promise<
 
   const role = session.user.role
 
-  if (role === "admin") {
-    redirect(`/${lang}/admin/dashboard`)
+  if (role === "admin" || role === "manager" || role === "support") {
+    redirect(`/${lang}/admin/profile`)
   } else if (role === "instructor") {
     redirect(`/${lang}/instructor/profile`)
   } else {

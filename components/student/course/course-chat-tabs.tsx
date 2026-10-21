@@ -16,8 +16,8 @@ export function CourseChatTabs({ lang, currentUserId, groupConversationId, group
   const isAr = lang === "ar"
 
   return (
-    <Tabs defaultValue="group" className="gap-3">
-      <TabsList>
+    <Tabs defaultValue="group" className="flex min-h-0 flex-1 flex-col gap-3">
+      <TabsList className="shrink-0">
         <TabsTrigger value="group" className="gap-1.5">
           <Users className="h-4 w-4" />
           {isAr ? "قروب الكورس" : "Course Group"}
@@ -30,15 +30,15 @@ export function CourseChatTabs({ lang, currentUserId, groupConversationId, group
         )}
       </TabsList>
 
-      <TabsContent value="group">
-        <div className="flex h-[70vh] border rounded-lg overflow-hidden bg-background shadow-sm" dir={isAr ? "rtl" : "ltr"}>
+      <TabsContent value="group" className="min-h-0">
+        <div className="flex h-full min-h-0 overflow-hidden rounded-2xl border bg-background shadow-sm" dir={isAr ? "rtl" : "ltr"}>
           <ChatWindow conversationId={groupConversationId} currentUserId={currentUserId} recipientName={groupName} />
         </div>
       </TabsContent>
 
       {instructor && (
-        <TabsContent value="instructor">
-          <div className="flex h-[70vh] border rounded-lg overflow-hidden bg-background shadow-sm" dir={isAr ? "rtl" : "ltr"}>
+        <TabsContent value="instructor" className="min-h-0">
+          <div className="flex h-full min-h-0 overflow-hidden rounded-2xl border bg-background shadow-sm" dir={isAr ? "rtl" : "ltr"}>
             <ChatWindow
               conversationId={instructor.conversationId}
               currentUserId={currentUserId}

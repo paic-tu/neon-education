@@ -1,6 +1,9 @@
 import { AccessToken } from "livekit-server-sdk"
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
+import { db } from "@/lib/db"
+import { users } from "@/lib/db/schema"
+import { eq } from "drizzle-orm"
 import { getEnrollment, getCourseById } from "@/lib/db/queries"
 
 export async function GET(req: NextRequest) {
@@ -67,7 +70,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Server misconfigured" }, { status: 500 })
   }
 
-  const displayName = username || session.user.name || session.user.id
+  // Read the account profile fresh from the DB so the participant tile in the
+  // live room shows the user's current account photo (the session JWT does not
+  // reliably carry the avatar).
+  const [dbUser] = await db
+    .select({ name: users.name, avatarUrl: users.avatarUrl })
+    .from(users)
+    .where(eq(users.id, session.user.id))
+    .limit(1)
+
+  const displayName = username || dbUser?.name || session.user.name || session.user.id
   const identity = session.user.id
   const at = new AccessToken(apiKey, apiSecret, {
     identity,
@@ -75,7 +87,7 @@ export async function GET(req: NextRequest) {
     metadata: JSON.stringify({ 
       role, 
       userId: session.user.id,
-      avatarUrl: session.user.image 
+      avatarUrl: dbUser?.avatarUrl || session.user.image || null
     }),
   })
 

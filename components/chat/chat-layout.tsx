@@ -12,9 +12,10 @@ import { cn } from "@/lib/utils"
 interface ChatLayoutProps {
   userId: string
   initialConversations?: any[]
+  enableNewChat?: boolean
 }
 
-export function ChatLayout({ userId, initialConversations = [] }: ChatLayoutProps) {
+export function ChatLayout({ userId, initialConversations = [], enableNewChat = true }: ChatLayoutProps) {
   const { language } = useLanguage()
   const isAr = language === "ar"
   const [conversations, setConversations] = useState(initialConversations)
@@ -73,7 +74,7 @@ export function ChatLayout({ userId, initialConversations = [] }: ChatLayoutProp
   if (isMobile) {
     if (selectedId) {
       return (
-        <div className="h-[calc(100dvh-4rem)] flex flex-col bg-background">
+        <div className="flex h-full flex-col overflow-hidden bg-background">
           <ChatWindow
             conversationId={selectedId}
             currentUserId={userId}
@@ -86,28 +87,26 @@ export function ChatLayout({ userId, initialConversations = [] }: ChatLayoutProp
     }
 
     return (
-      <div className="h-[calc(100dvh-4rem)] flex flex-col bg-background">
-         <div className="flex-1 overflow-hidden w-full">
-            <ChatSidebar
-            conversations={conversations}
-            selectedId={selectedId}
-            onSelect={handleSelectConversation}
-            action={<NewChatDialog onChatCreated={handleNewChat} />}
-            />
-         </div>
+      <div className="flex h-full flex-col overflow-hidden bg-background">
+        <ChatSidebar
+          conversations={conversations}
+          selectedId={selectedId}
+          onSelect={handleSelectConversation}
+          action={enableNewChat ? <NewChatDialog onChatCreated={handleNewChat} /> : undefined}
+        />
       </div>
     )
   }
 
   // Desktop View
   return (
-    <div className={cn("flex h-[calc(100dvh-8rem)] border rounded-lg overflow-hidden bg-background shadow-sm")} dir={isAr ? "rtl" : "ltr"}>
+    <div className={cn("flex h-full min-h-0 overflow-hidden rounded-2xl border bg-background shadow-sm")} dir={isAr ? "rtl" : "ltr"}>
       <div className="flex-none h-full">
         <ChatSidebar
           conversations={conversations}
           selectedId={selectedId}
           onSelect={handleSelectConversation}
-          action={<NewChatDialog onChatCreated={handleNewChat} />}
+          action={enableNewChat ? <NewChatDialog onChatCreated={handleNewChat} /> : undefined}
         />
       </div>
       <div className="flex-1 flex flex-col min-w-0">
@@ -124,7 +123,7 @@ export function ChatLayout({ userId, initialConversations = [] }: ChatLayoutProp
               <div className="p-4 rounded-full bg-muted">
                 <Loader2 className="h-8 w-8 text-muted-foreground" />
               </div>
-              <p>Select a conversation to start chatting</p>
+              <p>{isAr ? "اختر محادثة لبدء الدردشة" : "Select a conversation to start chatting"}</p>
             </div>
           </div>
         )}

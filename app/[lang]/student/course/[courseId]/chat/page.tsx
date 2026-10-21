@@ -50,10 +50,10 @@ export default async function CourseChatPage(props: { params: Promise<{ lang: st
   }
 
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="flex h-[calc(100dvh-11rem)] flex-col gap-4">
+      <div className="shrink-0">
         <h1 className="text-2xl font-bold sm:text-3xl">{isAr ? "المحادثات" : "Chat"}</h1>
-        <p className="text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           {isAr ? "تواصل مع زملائك ومدرب هذا الكورس" : "Talk with your classmates and this course's instructor"}
         </p>
       </div>

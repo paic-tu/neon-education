@@ -3,10 +3,20 @@
 import {
   LiveKitRoom,
   useRoomContext,
-  VideoConference,
+  GridLayout,
+  TrackLoop,
+  VideoTrack,
+  useTracks,
+  useIsMuted,
+  useIsSpeaking,
+  useParticipantInfo,
+  useTrackRefContext,
+  isTrackReference,
+  RoomAudioRenderer,
+  ControlBar,
 } from "@livekit/components-react"
 import "@livekit/components-styles"
-import { DataPacket_Kind, RoomEvent } from "livekit-client"
+import { DataPacket_Kind, RoomEvent, Track } from "livekit-client"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Hand, Loader2, MicOff, VideoOff, ChevronLeft, ChevronRight, Minimize2, Maximize2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -21,6 +31,106 @@ interface UserInfo {
   image?: string
 }
 
+function parseAvatarUrl(metadata?: string): string | null {
+  if (!metadata) return null
+  try {
+    const parsed = JSON.parse(metadata)
+    return typeof parsed?.avatarUrl === "string" && parsed.avatarUrl ? parsed.avatarUrl : null
+  } catch {
+    return null
+  }
+}
+
+function getInitials(name?: string): string {
+  if (!name) return "?"
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return "?"
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+function VideoStage({ isAr }: { isAr: boolean }) {
+  const tracks = useTracks(
+    [
+      { source: Track.Source.Camera, withPlaceholder: true },
+      { source: Track.Source.ScreenShare, withPlaceholder: false },
+    ],
+    { onlySubscribed: false }
+  )
+
+  return (
+    <div className="flex h-full flex-col bg-background">
+      <div className="min-h-0 flex-1 p-3">
+        <GridLayout tracks={tracks} className="h-full">
+          <TrackLoop tracks={tracks}>
+            <ParticipantVideoTile isAr={isAr} />
+          </TrackLoop>
+        </GridLayout>
+      </div>
+      <div className="shrink-0 border-t bg-background/95 px-2 py-1.5">
+        <ControlBar variation="minimal" controls={{ chat: false, settings: false }} />
+      </div>
+      <RoomAudioRenderer />
+    </div>
+  )
+}
+
+function ParticipantVideoTile({ isAr }: { isAr: boolean }) {
+  const trackRef = useTrackRefContext()
+  const participant = trackRef.participant
+  const { name, metadata } = useParticipantInfo({ participant })
+  const isSpeaking = useIsSpeaking(participant)
+  const isCameraMuted = useIsMuted(trackRef)
+
+  const micPublication = participant.getTrackPublication(Track.Source.Microphone)
+  const isMicMuted = !micPublication || micPublication.isMuted
+
+  const isScreenShare = trackRef.source === Track.Source.ScreenShare
+  const hasVideo = isTrackReference(trackRef) && !isCameraMuted
+  const avatarUrl = parseAvatarUrl(metadata)
+  const displayName = name || (isAr ? "مشارك" : "Participant")
+
+  return (
+    <div
+      className={cn(
+        "relative flex h-full w-full items-center justify-center overflow-hidden rounded-xl border bg-muted/40",
+        isSpeaking && !isScreenShare && "border-primary ring-2 ring-primary/60"
+      )}
+    >
+      {hasVideo ? (
+        <VideoTrack
+          trackRef={trackRef}
+          className={cn("h-full w-full", isScreenShare ? "object-contain" : "object-cover")}
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary/10 via-background to-primary/5">
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={avatarUrl}
+              alt={displayName}
+              className="h-20 w-20 rounded-full border-4 border-background object-cover shadow-lg sm:h-24 sm:w-24"
+            />
+          ) : (
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/15 text-xl font-bold text-primary sm:h-24 sm:w-24 sm:text-2xl">
+              {getInitials(name)}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div
+        className={cn(
+          "absolute bottom-2 flex max-w-[calc(100%-1rem)] items-center gap-2 rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm",
+          isAr ? "right-2" : "left-2"
+        )}
+      >
+        {isMicMuted && <MicOff className="h-3.5 w-3.5 shrink-0 text-red-400" />}
+        <span className="truncate">{displayName}</span>
+      </div>
+    </div>
+  )
+}
 
 export default function LiveClassroomClient({
   roomName,
@@ -315,7 +425,7 @@ function ClassroomLayout({
 
   return (
     <div className="relative h-full w-full">
-      <VideoConference />
+      <VideoStage isAr={isAr} />
       
       {/* Student Controls */}
       {!isInstructorView && (

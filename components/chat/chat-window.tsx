@@ -104,6 +104,17 @@ export function ChatWindow({ conversationId, currentUserId, recipientName, recip
     },
   })
 
+  // Role badge label
+  const roleLabel = (role?: string) => {
+    if (!role) return ""
+    if (!isAr) return role
+    if (role === "admin") return "مدير"
+    if (role === "instructor") return "مدرب"
+    if (role === "manager") return "مدير عام"
+    if (role === "support") return "دعم فني"
+    return "طالب"
+  }
+
   // Format date helper
   const formatMessageDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -199,18 +210,18 @@ export function ChatWindow({ conversationId, currentUserId, recipientName, recip
 
   return (
     <div className="flex flex-col h-full bg-background w-full overflow-hidden" dir={isAr ? "rtl" : "ltr"}>
-      <div className={cn("h-16 px-4 border-b flex items-center gap-3 bg-background/95 backdrop-blur z-10 shadow-sm shrink-0", isAr && "flex-row-reverse")} dir={isAr ? "rtl" : "ltr"}>
+      <div className="z-10 flex h-16 shrink-0 items-center gap-3 border-b bg-background/95 px-4 shadow-sm backdrop-blur">
         {onBack && (
-          <Button variant="ghost" size="icon" onClick={onBack} className="md:hidden -ml-2 shrink-0">
-            <ArrowLeft className="h-5 w-5" />
+          <Button variant="ghost" size="icon" onClick={onBack} className="-ms-2 shrink-0 md:hidden">
+            <ArrowLeft className={cn("h-5 w-5", isAr && "rotate-180")} />
           </Button>
         )}
-        <Avatar className="h-9 w-9 border shrink-0">
+        <Avatar className="h-9 w-9 shrink-0 border">
             <AvatarImage src={recipientImage || "/placeholder-user.jpg"} />
             <AvatarFallback>{recipientName?.[0]}</AvatarFallback>
         </Avatar>
-        <div className="flex flex-col overflow-hidden">
-          <h2 className={cn("font-semibold text-sm leading-none truncate", isAr && "text-right")}>{recipientName || (isAr ? "الدردشة" : "Chat")}</h2>
+        <div className="flex min-w-0 flex-col">
+          <h2 className="truncate text-sm font-semibold leading-none">{recipientName || (isAr ? "الدردشة" : "Chat")}</h2>
           {typingUsers.length > 0 && (
             <span className="text-[10px] text-muted-foreground animate-pulse truncate">
               {isAr ? (typingUsers.length === 1 ? "يكتب..." : "يكتبون...") : (typingUsers.length === 1 ? "typing..." : "people typing...")}
@@ -230,82 +241,84 @@ export function ChatWindow({ conversationId, currentUserId, recipientName, recip
           messages.map((msg, index) => {
             const isMe = msg.senderId === currentUserId
             const isSameSender = index > 0 && messages[index - 1].senderId === msg.senderId
-            
+
+            const senderAvatar = (
+              <UserActionPopover user={msg.sender} currentUserId={currentUserId}>
+                <Avatar className="h-8 w-8 shrink-0 cursor-pointer transition-transform hover:scale-105">
+                  <AvatarImage src={msg.sender?.avatarUrl || "/placeholder-user.jpg"} />
+                  <AvatarFallback>{msg.sender?.name?.[0]}</AvatarFallback>
+                </Avatar>
+              </UserActionPopover>
+            )
+
             return (
-            <div
-              key={msg.id}
-              className={cn(
-                "flex items-start gap-2 hover:bg-muted/30 p-1 rounded-xl transition-colors group max-w-[85%] md:max-w-[70%]",
-                !isSameSender && "mt-6",
-                isMe 
-                  ? cn("flex-row-reverse bg-primary/5 hover:bg-primary/10", isAr ? "" : "ml-auto")
-                  : (isAr ? "ml-auto" : "")
-              )}
-            >
-              {!isSameSender ? (
-                <UserActionPopover user={msg.sender} currentUserId={currentUserId}>
-                  <Avatar className="w-8 h-8 mt-1 cursor-pointer hover:scale-105 transition-transform">
-                    <AvatarImage src={msg.sender?.avatarUrl || "/placeholder-user.jpg"} />
-                    <AvatarFallback>{msg.sender?.name?.[0]}</AvatarFallback>
-                  </Avatar>
-                </UserActionPopover>
-              ) : (
-                 <div className="w-8" /> 
-              )}
-              
-              <div className={cn("flex-1 min-w-0 flex flex-col", isMe && "items-end")}>
-                {!isSameSender && (
-                  <div className={cn("flex items-center gap-2 mb-1 opacity-70 group-hover:opacity-100 transition-opacity", isMe && "flex-row-reverse")}>
-                    <UserActionPopover user={msg.sender} currentUserId={currentUserId}>
-                      <span className="font-semibold text-sm hover:underline cursor-pointer">
-                        {msg.sender?.name}
-                      </span>
-                    </UserActionPopover>
-                    {msg.sender?.role && (
-                      <span className={cn(
-                        "text-[10px] px-1.5 py-0.5 rounded-full text-white font-medium uppercase tracking-wider",
-                        msg.sender.role === "admin" ? "bg-red-500/90" :
-                        msg.sender.role === "instructor" ? "bg-blue-500/90" :
-                        "bg-green-500/90" // Default for student
-                      )}>
-                        {msg.sender.role}
-                      </span>
-                    )}
-                    <span className="text-[10px] text-muted-foreground mx-1">
-                      {formatMessageDate(msg.createdAt)}
-                    </span>
-                  </div>
+              <div
+                key={msg.id}
+                className={cn(
+                  "flex items-end gap-2",
+                  isMe ? "justify-end" : "justify-start",
+                  !isSameSender && "mt-5"
                 )}
-                <div className={cn(
-                  "relative text-sm leading-relaxed whitespace-pre-wrap shadow-sm transition-all",
-                  msg.type === "sticker" ? "bg-transparent shadow-none p-0 min-w-0" :
-                  msg.type === "gif" ? "p-0 overflow-hidden rounded-[20px] min-w-[200px]" :
-                  "px-4 py-2 pb-6 rounded-[22px] min-w-[120px]",
-                  isMe 
-                    ? (msg.type === "text" ? "bg-primary text-primary-foreground rounded-tr-none" : "")
-                    : (msg.type === "text" ? "bg-white dark:bg-muted text-foreground/90 rounded-tl-none border" : "")
-                )}>
-                  {msg.type === "sticker" ? (
-                    <Image 
-                      src={msg.attachmentUrl} 
-                      alt="Sticker" 
-                      width={128} 
-                      height={128} 
-                      className="object-contain" 
-                      unoptimized
-                    />
-                  ) : msg.type === "gif" ? (
-                    <Image 
-                      src={msg.attachmentUrl} 
-                      alt="GIF" 
-                      width={0}
-                      height={0}
-                      sizes="100vw"
-                      className="w-full max-w-[250px] h-auto object-cover" 
-                      unoptimized
-                    />
-                  ) : msg.type === "image" ? (
-                    <div className="relative group">
+              >
+                {!isMe && (isSameSender ? <div className="w-8 shrink-0" /> : senderAvatar)}
+
+                <div className={cn("group flex min-w-0 max-w-[85%] flex-col md:max-w-[70%]", isMe ? "items-end" : "items-start")}>
+                  {!isSameSender && (
+                    <div className="mb-1 flex flex-wrap items-center gap-2 opacity-70 transition-opacity group-hover:opacity-100">
+                      <UserActionPopover user={msg.sender} currentUserId={currentUserId}>
+                        <span className="cursor-pointer text-xs font-semibold hover:underline">
+                          {msg.sender?.name}
+                        </span>
+                      </UserActionPopover>
+                      {msg.sender?.role && (
+                        <span className={cn(
+                          "rounded-full px-1.5 py-0.5 text-[10px] font-medium tracking-wider text-white",
+                          msg.sender.role === "admin" ? "bg-red-500/90" :
+                          msg.sender.role === "instructor" ? "bg-blue-500/90" :
+                          msg.sender.role === "manager" ? "bg-purple-500/90" :
+                          msg.sender.role === "support" ? "bg-amber-500/90" :
+                          "bg-green-500/90"
+                        )}>
+                          {roleLabel(msg.sender.role)}
+                        </span>
+                      )}
+                      <span className="text-[10px] text-muted-foreground">
+                        {formatMessageDate(msg.createdAt)}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className={cn(
+                    "relative whitespace-pre-wrap text-sm leading-relaxed shadow-sm transition-all",
+                    msg.type === "sticker" ? "min-w-0 bg-transparent p-0 shadow-none" :
+                    (msg.type === "gif" || msg.type === "image") ? "min-w-[180px] overflow-hidden rounded-2xl p-0" :
+                    msg.type === "file" ? "rounded-2xl p-1" :
+                    "min-w-[100px] rounded-2xl px-4 py-2 pb-6",
+                    msg.type === "text" && (isMe
+                      ? "bg-primary text-primary-foreground"
+                      : "border bg-white text-foreground/90 dark:bg-muted")
+                  )}>
+                    {msg.type === "sticker" ? (
+                      <Image 
+                        src={msg.attachmentUrl} 
+                        alt="Sticker" 
+                        width={128} 
+                        height={128} 
+                        className="object-contain" 
+                        unoptimized
+                      />
+                    ) : msg.type === "gif" ? (
+                      <Image 
+                        src={msg.attachmentUrl} 
+                        alt="GIF" 
+                        width={0}
+                        height={0}
+                        sizes="100vw"
+                        className="w-full max-w-[250px] h-auto object-cover" 
+                        unoptimized
+                      />
+                    ) : msg.type === "image" ? (
+                      <div className="group/img relative">
                       <Image 
                         src={msg.attachmentUrl} 
                         alt="Image" 
@@ -321,56 +334,60 @@ export function ChatWindow({ conversationId, currentUserId, recipientName, recip
                         download 
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="absolute bottom-2 right-2 bg-black/50 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+                        className="absolute bottom-2 end-2 bg-black/50 text-white p-1.5 rounded-full opacity-0 group-hover/img:opacity-100 transition-opacity hover:bg-black/70"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <Download className="h-4 w-4" />
                       </a>
-                    </div>
-                  ) : msg.type === "file" ? (
-                    <div className="flex items-center gap-3 bg-secondary/50 p-2 rounded-lg">
-                      <div className="bg-background p-2 rounded-md">
-                        <File className="h-6 w-6 text-primary" />
                       </div>
-                      <div className="flex flex-col min-w-0 max-w-[150px]">
-                        <span className="text-sm font-medium truncate" title={msg.content}>
-                          {msg.content}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground uppercase">FILE</span>
+                    ) : msg.type === "file" ? (
+                      <div className="flex items-center gap-3 bg-secondary/50 p-2 rounded-lg">
+                        <div className="bg-background p-2 rounded-md">
+                          <File className="h-6 w-6 text-primary" />
+                        </div>
+                        <div className="flex flex-col min-w-0 max-w-[150px]">
+                          <span className="text-sm font-medium truncate" title={msg.content}>
+                            {msg.content}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground uppercase">{isAr ? "ملف" : "FILE"}</span>
+                        </div>
+                        <a 
+                          href={msg.attachmentUrl} 
+                          download 
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="ms-auto p-1.5 hover:bg-background rounded-full transition-colors text-muted-foreground hover:text-foreground"
+                        >
+                          <Download className="h-4 w-4" />
+                        </a>
                       </div>
-                      <a 
-                        href={msg.attachmentUrl} 
-                        download 
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="ml-auto p-1.5 hover:bg-background rounded-full transition-colors text-muted-foreground hover:text-foreground"
-                      >
-                        <Download className="h-4 w-4" />
-                      </a>
-                    </div>
-                  ) : (
-                    msg.content
-                  )}
-                  
-                  {msg.type === "text" && (
-                    <span className={cn(
-                      "text-[10px] absolute bottom-1.5 opacity-70 select-none font-medium",
-                      isMe ? "left-3 text-primary-foreground/80" : "right-3 text-muted-foreground"
-                    )}>
-                      {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  )}
+                    ) : (
+                      msg.content
+                    )}
+                    
+                    {msg.type === "text" && (
+                      <span className={cn(
+                        "absolute bottom-1.5 end-3 text-[10px] opacity-70 select-none font-medium",
+                        isMe ? "text-primary-foreground/80" : "text-muted-foreground"
+                      )}>
+                        {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </div>
                 </div>
+
+                {isMe && (isSameSender ? <div className="w-8 shrink-0" /> : senderAvatar)}
               </div>
-            </div>
-          )
+            )
           })
           )}
           {typingUsers.length > 0 && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground px-2 animate-pulse">
               <Loader2 className="h-3 w-3 animate-spin" />
               <span>
-                {typingUsers.join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing...
+                {isAr
+                  ? `${typingUsers.join("، ")} ${typingUsers.length === 1 ? "يكتب الآن..." : "يكتبون الآن..."}`
+                  : `${typingUsers.join(", ")} ${typingUsers.length === 1 ? "is" : "are"} typing...`}
               </span>
             </div>
           )}

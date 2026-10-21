@@ -4,7 +4,6 @@ import { notFound, redirect } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowRight, BookOpen, Lock, Users, Video } from "lucide-react"
 
 export default async function StudentCourseEntryPage(props: { params: Promise<{ lang: string; courseId: string }> }) {
   const params = await props.params
@@ -57,69 +56,6 @@ export default async function StudentCourseEntryPage(props: { params: Promise<{ 
 
   // 5. Determine Next Lesson
   const lessons = await getCourseLessons(courseId)
-
-  if (course.isLive) {
-    const isStreaming = (course as any).isStreaming
-    return (
-      <div className="max-w-2xl">
-        <Card className="border-primary/20 shadow-lg">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-2xl">{lang === "ar" ? "دورة مباشرة" : "Live Course"}</CardTitle>
-              {isStreaming && (
-                <span className="bg-destructive text-destructive-foreground px-3 py-1 rounded-full text-xs font-bold animate-pulse">
-                  LIVE
-                </span>
-              )}
-            </div>
-            <CardDescription className="text-lg mt-2">
-              {isStreaming 
-                ? (lang === "ar" ? "البث المباشر جارٍ الآن!" : "Live stream is active now!")
-                : (lang === "ar" ? "لم يتم بدء البث المباشر بعد." : "The live stream has not started yet.")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="bg-muted/50 p-4 rounded-lg space-y-3">
-              <div className="flex items-center gap-3">
-                <Users className="h-5 w-5 text-primary" />
-                <span className="font-medium">
-                  {lang === "ar" ? "المسجلين في الدورة: " : "Registered Students: "}
-                  {course.enrollmentCount || 0}
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <Video className="h-5 w-5 text-primary" />
-                <span className="font-medium">
-                  {lang === "ar" ? "الحالة: " : "Status: "}
-                  {isStreaming 
-                    ? (lang === "ar" ? "مباشر الآن 🔴" : "Live Now 🔴") 
-                    : (lang === "ar" ? "في انتظار البث ⏳" : "Waiting for Stream ⏳")}
-                </span>
-              </div>
-            </div>
-            
-            <Button 
-              className="w-full gap-2 text-lg h-12" 
-              asChild 
-              size="lg"
-              disabled={!isStreaming && userRole === "student"}
-            >
-              <Link href={`/${lang}/student/course/${courseId}/live`}>
-                <Video className="h-5 w-5" />
-                {lang === "ar" ? "دخول البث المباشر" : "Join Live Session"}
-              </Link>
-            </Button>
-
-            <Button variant="outline" className="w-full" asChild>
-              <Link href={`/${lang}/student/dashboard`}>
-                {lang === "ar" ? "العودة للوحة التحكم" : "Back to Dashboard"}
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
 
   if (!lessons || lessons.length === 0) {
     return (

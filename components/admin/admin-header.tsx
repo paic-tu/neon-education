@@ -127,7 +127,7 @@ export function AdminHeader({ user, mobileNav }: AdminHeaderProps) {
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>{language === "ar" ? "حسابي" : "My Account"}</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push(`/${language}/profile`)}>
+            <DropdownMenuItem onClick={() => router.push(`/${language}/admin/profile`)}>
               <UserIcon className="mr-2 h-4 w-4" />
               {language === "ar" ? "الملف الشخصي" : "Profile"}
             </DropdownMenuItem>

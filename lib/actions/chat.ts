@@ -34,7 +34,7 @@ export async function getConversations() {
       const courseChatIds = courseChats.map(c => c.id)
       conversationIds = [...new Set([...conversationIds, ...courseChatIds])]
     } else if (session.user.role === "instructor") {
-      // Instructors see chats for their courses
+      // Instructors only see the group chats of their own courses...
       const myCourseChats = await db
         .select({ id: conversations.id })
         .from(conversations)
@@ -42,7 +42,26 @@ export async function getConversations() {
         .where(eq(courses.instructorId, session.user.id))
 
       const myCourseChatIds = myCourseChats.map(c => c.id)
-      conversationIds = [...new Set([...conversationIds, ...myCourseChatIds])]
+
+      // ...plus private chats — but only with students who actually messaged
+      // them. Instructors cannot browse or start conversations with arbitrary
+      // students, so a DM only surfaces once the other party has written.
+      let studentDmIds: string[] = []
+      const personalIds = userParticipations.map(p => p.conversationId)
+      if (personalIds.length > 0) {
+        const rows = await db
+          .selectDistinct({ id: messages.conversationId })
+          .from(messages)
+          .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+          .where(and(
+            inArray(messages.conversationId, personalIds),
+            eq(conversations.type, "individual"),
+            ne(messages.senderId, session.user.id)
+          ))
+        studentDmIds = rows.map(r => r.id)
+      }
+
+      conversationIds = [...new Set([...myCourseChatIds, ...studentDmIds])]
     }
 
     if (conversationIds.length === 0) return []
@@ -477,10 +496,6 @@ export async function createPrivateChat(otherUserId: string) {
 
   if (session.user.id === otherUserId) return { error: "Cannot chat with yourself" }
 
-  // Check permission
-  const allowed = await canChat(session.user.id, otherUserId)
-  if (!allowed) return { error: "You can only chat with your instructors or classmates" }
-
   // Check if conversation already exists
   // This is tricky with Drizzle, we need to find a conversation where both users are participants and type is individual
   // A simple way is to fetch all individual conversations of current user and check if other user is in them
@@ -501,9 +516,21 @@ export async function createPrivateChat(otherUserId: string) {
     p.conversation.participants.some(cp => cp.userId === otherUserId)
   )
 
+  // Reuse an existing conversation (also lets an instructor jump back into a
+  // chat a student already started).
   if (existingConv) {
     return { conversationId: existingConv.conversationId }
   }
+
+  // Instructors can only reply to students who message them — they cannot
+  // start new private conversations of their own.
+  if (session.user.role === "instructor") {
+    return { error: "You can only reply to students who message you" }
+  }
+
+  // Check permission
+  const allowed = await canChat(session.user.id, otherUserId)
+  if (!allowed) return { error: "You can only chat with your instructors or classmates" }
 
   // Create new conversation
   const [newConv] = await db.insert(conversations).values({

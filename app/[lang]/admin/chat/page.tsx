@@ -19,9 +19,9 @@ export default async function ChatPage({ params }: { params: Promise<{ lang: str
   const isAr = lang === "ar"
 
   return (
-    <div className="-m-6 md:m-0 p-2 md:p-6 h-full">
-      <h1 className="hidden md:block text-3xl font-bold mb-6">{isAr ? "المحادثات" : "Chat"}</h1>
-      <div className="h-full">
+    <div className="flex h-[calc(100dvh-7rem)] flex-col">
+      <h1 className="mb-4 hidden shrink-0 text-3xl font-bold md:block">{isAr ? "المحادثات" : "Chat"}</h1>
+      <div className="min-h-0 flex-1">
         <ChatLayout userId={session.user.id} initialConversations={initialConversations} />
       </div>
     </div>
