@@ -15,9 +15,12 @@ export const viewport: Viewport = {
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params
   const isAr = lang === "ar"
+  const siteUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://neonedu.org")
+    .replace(/^http:\/\//i, "https://")
+    .replace(/\/+$/, "")
 
   return {
-    metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://neonedu.org'),
+    metadataBase: new URL(siteUrl),
     applicationName: "منصة نيون",
     title: {
       default: isAr
@@ -118,7 +121,9 @@ export default async function LangLayout({
   params: Promise<{ lang: string }>
 }>) {
   const { lang } = await params
-  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://neonedu.org').replace(/\/+$/, '')
+  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://neonedu.org")
+    .replace(/^http:\/\//i, "https://")
+    .replace(/\/+$/, "")
 
   const structuredData = {
     '@context': 'https://schema.org',
