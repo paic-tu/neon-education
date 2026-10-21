@@ -2,9 +2,9 @@ import { MetadataRoute } from 'next'
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'منصة نيون التعليمية',
+    name: 'منصة نيون',
     short_name: 'منصة نيون',
-    description: 'منصة نيون التعليمية للدورات والشهادات المعتمدة',
+    description: 'منصة نيون للدورات والشهادات المعتمدة',
     start_url: '/',
     display: 'standalone',
     background_color: '#ffffff',

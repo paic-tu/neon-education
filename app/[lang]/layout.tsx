@@ -18,12 +18,12 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
 
   return {
     metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://neonedu.org'),
-    applicationName: "منصة نيون التعليمية",
+    applicationName: "منصة نيون",
     title: {
       default: isAr
-        ? "منصة نيون التعليمية | دورات وشهادات تقنية معتمدة"
+        ? "منصة نيون التعليمية | التجربة التعليمية بالذكاء الاصطناعي"
         : "Neon Learning Platform | Accredited Tech Courses & Certificates",
-      template: isAr ? "%s | منصة نيون التعليمية" : "%s | Neon Learning Platform"
+      template: isAr ? "%s | منصة نيون" : "%s | Neon Learning Platform"
     },
     description: isAr 
       ? "منصة نيون التعليمية منصة تعليم إلكتروني عربية تقدّم دورات وشهادات تقنية معتمدة في البرمجة وتطوير الويب وتحليل البيانات، بمسارات عملية يقدّمها مدربون خبراء." 
@@ -62,23 +62,23 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
       locale: isAr ? "ar_SA" : "en_US",
       alternateLocale: isAr ? ["en_US"] : ["ar_SA"],
       url: `/${lang}`,
-      title: isAr ? "منصة نيون التعليمية" : "Neon Learning Platform",
+      title: isAr ? "منصة نيون" : "Neon Learning Platform",
       description: isAr 
         ? "منصة نيون التعليمية منصة تعليم إلكتروني عربية تقدّم دورات وشهادات تقنية معتمدة في البرمجة والتقنية" 
         : "Neon Learning Platform is an Arabic e-learning platform offering accredited tech courses and certificates",
-      siteName: isAr ? "منصة نيون التعليمية" : "Neon Learning Platform",
+      siteName: isAr ? "منصة نيون" : "Neon Learning Platform",
       images: [
         {
           url: '/og-image.png',
           width: 1200,
           height: 630,
-          alt: 'منصة نيون التعليمية',
+          alt: 'منصة نيون',
         },
       ],
     },
     twitter: {
       card: "summary_large_image",
-      title: isAr ? "منصة نيون التعليمية" : "Neon Learning Platform",
+      title: isAr ? "منصة نيون" : "Neon Learning Platform",
       description: isAr 
         ? "منصة نيون التعليمية منصة تعليم إلكتروني عربية تقدّم دورات وشهادات تقنية معتمدة" 
         : "Neon Learning Platform offers accredited tech courses and certificates",

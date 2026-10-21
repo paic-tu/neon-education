@@ -126,7 +126,11 @@ export function NewTicketDialog({ lang, onCreated }: NewTicketDialogProps) {
             >
               {isAr ? "إلغاء" : "Cancel"}
             </Button>
-            <Button type="submit" className="bg-indigo-500 hover:bg-indigo-600 text-white" disabled={loading}>
+            <Button
+              type="submit"
+              className="bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-lg shadow-primary/25 transition-opacity hover:opacity-90"
+              disabled={loading}
+            >
               {loading ? (isAr ? "جاري الإرسال..." : "Submitting...") : (isAr ? "إرسال التذكرة" : "Submit Ticket")}
             </Button>
           </div>
