@@ -8,7 +8,6 @@ import { BookOpen, Trophy, Award, PlayCircle, Clock, Video } from "lucide-react"
 import { getStudentDashboardData } from "@/lib/db/queries"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
-import { RotateDevicePrompt } from "@/components/rotate-device-prompt"
 
 export default async function StudentDashboardPage({ params }: { params: Promise<{ lang: string }> }) {
   const { lang } = await params
@@ -23,7 +22,6 @@ export default async function StudentDashboardPage({ params }: { params: Promise
 
   return (
     <div className="container py-8 space-y-8">
-      <RotateDevicePrompt />
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold">{isAr ? "لوحة التحكم" : "Student Dashboard"}</h1>
