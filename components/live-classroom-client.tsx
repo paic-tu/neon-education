@@ -14,8 +14,6 @@ import {
   isTrackReference,
   RoomAudioRenderer,
   ControlBar,
-  useChat,
-  type ReceivedChatMessage,
   type TrackReferenceOrPlaceholder,
 } from "@livekit/components-react"
 import "@livekit/components-styles"
@@ -44,10 +42,12 @@ import {
   Minimize2,
   MessageSquare,
   Send,
+  ImagePlus,
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
+import { uploadFileAction } from "@/lib/actions/upload"
 import { cn } from "@/lib/utils"
 
 interface UserInfo {
@@ -462,15 +462,98 @@ function ParticipantVideoTile({ isAr }: { isAr: boolean }) {
   return <VideoTile trackRef={trackRef} isAr={isAr} />
 }
 
+const CHAT_TOPIC = "neon-live-chat"
+
+interface LiveChatMessage {
+  id: string
+  kind: "text" | "image"
+  message: string
+  url?: string
+  senderName: string
+  senderIdentity: string
+  isSelf: boolean
+}
+
+/**
+ * In-room chat built directly on the LiveKit data channel so every role
+ * (including the instructor) can publish, and so images can be shared as well
+ * as plain text.
+ */
+function useLiveChat() {
+  const room = useRoomContext()
+  const [messages, setMessages] = useState<LiveChatMessage[]>([])
+  const [isSending, setIsSending] = useState(false)
+
+  useEffect(() => {
+    const onData = (payload: Uint8Array, participant?: any) => {
+      let parsed: any
+      try {
+        parsed = JSON.parse(new TextDecoder().decode(payload))
+      } catch {
+        return
+      }
+      if (parsed?.channel !== "chat") return
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: typeof parsed.id === "string" ? parsed.id : `${Date.now()}-${Math.random()}`,
+          kind: parsed.kind === "image" ? "image" : "text",
+          message: typeof parsed.message === "string" ? parsed.message : "",
+          url: typeof parsed.url === "string" ? parsed.url : undefined,
+          senderName: participant?.name || participant?.identity || "",
+          senderIdentity: participant?.identity || "",
+          isSelf: participant?.identity === room.localParticipant.identity,
+        },
+      ])
+    }
+
+    room.on(RoomEvent.DataReceived, onData)
+    return () => {
+      room.off(RoomEvent.DataReceived, onData)
+    }
+  }, [room])
+
+  const send = useCallback(
+    async (payload: { kind: "text" | "image"; message?: string; url?: string }) => {
+      const id = `${room.localParticipant.identity}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      setIsSending(true)
+      try {
+        const bytes = new TextEncoder().encode(JSON.stringify({ channel: "chat", id, ...payload }))
+        await room.localParticipant.publishData(bytes, { reliable: true, topic: CHAT_TOPIC })
+        setMessages((prev) => [
+          ...prev,
+          {
+            id,
+            kind: payload.kind,
+            message: payload.message || "",
+            url: payload.url,
+            senderName: room.localParticipant.name || "",
+            senderIdentity: room.localParticipant.identity,
+            isSelf: true,
+          },
+        ])
+      } finally {
+        setIsSending(false)
+      }
+    },
+    [room]
+  )
+
+  return { messages, send, isSending }
+}
+
 function ChatPanel({ isAr, onClose }: { isAr: boolean; onClose: () => void }) {
-  const { chatMessages, send, isSending } = useChat()
+  const { messages, send, isSending } = useLiveChat()
   const [text, setText] = useState("")
+  const [isUploading, setIsUploading] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [chatMessages])
+  }, [messages.length])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -478,9 +561,35 @@ function ChatPanel({ isAr, onClose }: { isAr: boolean; onClose: () => void }) {
     if (!value || isSending) return
     setText("")
     try {
-      await send(value)
+      await send({ kind: "text", message: value })
     } catch {
       setText(value)
+    }
+  }
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setIsUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      let url = ""
+      const res = await fetch("/api/upload", { method: "POST", body: formData, credentials: "include" })
+      if (res.ok) {
+        const data = await res.json()
+        url = String(data?.url || "")
+      } else {
+        const fallback = await uploadFileAction(formData)
+        if (fallback?.success && fallback.url) url = fallback.url
+      }
+      if (!url) throw new Error("Upload failed")
+      await send({ kind: "image", message: file.name, url })
+    } catch (err) {
+      console.error("Chat image upload failed:", err)
+    } finally {
+      setIsUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ""
     }
   }
 
@@ -497,33 +606,60 @@ function ChatPanel({ isAr, onClose }: { isAr: boolean; onClose: () => void }) {
       </div>
 
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 scrollbar-hide">
-        {chatMessages.length === 0 ? (
+        {messages.length === 0 ? (
           <p className="pt-6 text-center text-xs text-muted-foreground">
             {isAr ? "لا توجد رسائل بعد. ابدأ المحادثة." : "No messages yet. Start the conversation."}
           </p>
         ) : (
-          chatMessages.map((msg: ReceivedChatMessage) => {
-            const isSelf = msg.from?.identity === undefined ? false : msg.from.isLocal
-            return (
-              <div key={msg.id ?? `${msg.timestamp}`} className={cn("flex flex-col gap-0.5", isSelf && "items-end")}>
-                <span className="text-[11px] font-medium text-muted-foreground">
-                  {isSelf ? (isAr ? "أنت" : "You") : msg.from?.name || msg.from?.identity || (isAr ? "مشارك" : "Participant")}
-                </span>
+          messages.map((msg) => (
+            <div key={msg.id} className={cn("flex flex-col gap-0.5", msg.isSelf && "items-end")}>
+              <span className="text-[11px] font-medium text-muted-foreground">
+                {msg.isSelf ? (isAr ? "أنت" : "You") : msg.senderName || (isAr ? "مشارك" : "Participant")}
+              </span>
+              {msg.kind === "image" && msg.url ? (
+                <button
+                  type="button"
+                  onClick={() => window.open(msg.url, "_blank")}
+                  className="max-w-[85%] overflow-hidden rounded-2xl border"
+                  title={msg.message}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={msg.url} alt={msg.message || "image"} className="max-h-64 w-full object-cover" />
+                </button>
+              ) : (
                 <div
                   className={cn(
                     "max-w-[85%] rounded-2xl px-3 py-2 text-sm break-words",
-                    isSelf ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
+                    msg.isSelf ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
                   )}
                 >
                   {msg.message}
                 </div>
-              </div>
-            )
-          })
+              )}
+            </div>
+          ))
         )}
       </div>
 
       <form onSubmit={handleSubmit} className="flex items-center gap-2 border-t p-2">
+        <input
+          type="file"
+          accept="image/*"
+          ref={fileInputRef}
+          className="hidden"
+          onChange={handleFileSelect}
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 shrink-0"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading || isSending}
+          title={isAr ? "إرسال صورة" : "Send image"}
+        >
+          {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+        </Button>
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -598,6 +734,8 @@ function ClassroomUI({
       const str = new TextDecoder().decode(payload)
       try {
         const data = JSON.parse(str)
+
+        if (data.channel === "chat") return
 
         if (data.type === "RAISE_HAND") {
           const whoName = participant?.name || participant?.identity || "Unknown"
@@ -837,8 +975,8 @@ function ClassroomUI({
       {isInstructorView && (
         <aside
           className={cn(
-            "absolute top-4 z-40 rounded-lg border bg-background/80 shadow-lg backdrop-blur-sm transition-all duration-300",
-            isAr ? "left-4" : "right-4",
+            "absolute bottom-20 z-40 rounded-lg border bg-background/80 shadow-lg backdrop-blur-sm transition-all duration-300",
+            isAr ? "right-4" : "left-4",
             isCollapsed ? "w-12" : "w-64"
           )}
         >
