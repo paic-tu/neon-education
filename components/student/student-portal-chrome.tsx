@@ -4,6 +4,7 @@ import type { ReactNode } from "react"
 import { usePathname } from "next/navigation"
 import { StudentSidebar, StudentMobileNav } from "@/components/student/student-sidebar"
 import { PortalHeader } from "@/components/portal-header"
+import { LiveSessionProvider } from "@/components/live-classroom-client"
 import { cn } from "@/lib/utils"
 
 interface StudentPortalChromeProps {
@@ -29,7 +30,7 @@ export function StudentPortalChrome({ user, children }: StudentPortalChromeProps
       <div className="flex flex-1 flex-col overflow-hidden">
         <PortalHeader user={user} mobileNav={insideCourseShell ? undefined : <StudentMobileNav />} />
         <main className={cn("flex-1", insideCourseShell ? "overflow-hidden" : "overflow-y-auto p-6 scrollbar-hide")}>
-          {children}
+          <LiveSessionProvider>{children}</LiveSessionProvider>
         </main>
       </div>
     </div>

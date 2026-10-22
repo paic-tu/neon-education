@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import LiveClassroomClient from "@/components/live-classroom-client"
+import LiveClassroomClient, { useLiveSession } from "@/components/live-classroom-client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
@@ -17,6 +17,7 @@ interface CourseLiveSessionProps {
 
 export function CourseLiveSession({ courseId, isAr, user, initialIsStreaming }: CourseLiveSessionProps) {
   const { toast } = useToast()
+  const { stop } = useLiveSession()
   const [isStreaming, setIsStreaming] = useState(initialIsStreaming)
   const [isUpdating, setIsUpdating] = useState(false)
 
@@ -30,6 +31,7 @@ export function CourseLiveSession({ courseId, isAr, user, initialIsStreaming }: 
       })
       if (!res.ok) throw new Error("Failed to update status")
       setIsStreaming(value)
+      if (!value) stop()
     } catch {
       toast({
         title: isAr ? "خطأ" : "Error",

@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { canAccessAdmin } from "@/lib/rbac/permissions"
 import { AdminSidebar, AdminMobileNav } from "@/components/admin/admin-sidebar"
 import { AdminHeader } from "@/components/admin/admin-header"
+import { LiveSessionProvider } from "@/components/live-classroom-client"
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const userPromise = Promise.race([
@@ -28,7 +29,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <AdminSidebar user={user} />
       <div className="flex flex-1 flex-col">
         <AdminHeader user={user} mobileNav={<AdminMobileNav user={user} />} />
-        <main className="flex-1 p-6">{children}</main>
+        <main className="flex-1 p-6">
+          <LiveSessionProvider>{children}</LiveSessionProvider>
+        </main>
       </div>
     </div>
   )
