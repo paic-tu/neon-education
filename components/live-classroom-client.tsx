@@ -608,8 +608,19 @@ function useLiveChat() {
   return { messages, send, isSending }
 }
 
-function ChatPanel({ isAr, onClose }: { isAr: boolean; onClose: () => void }) {
-  const { messages, send, isSending } = useLiveChat()
+function ChatPanel({
+  isAr,
+  onClose,
+  messages,
+  send,
+  isSending,
+}: {
+  isAr: boolean
+  onClose: () => void
+  messages: LiveChatMessage[]
+  send: (payload: { kind: "text" | "image"; message?: string; url?: string }) => Promise<void>
+  isSending: boolean
+}) {
   const [text, setText] = useState("")
   const [isUploading, setIsUploading] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -758,12 +769,15 @@ function ClassroomUI({
 }) {
   const room = useRoomContext()
   const { toast } = useToast()
+  const { messages, send, isSending } = useLiveChat()
   const [raisedHands, setRaisedHands] = useState<string[]>([])
   const [isRecording, setIsRecording] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [showChat, setShowChat] = useState(false)
+  const [unreadChatCount, setUnreadChatCount] = useState(0)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recordedChunksRef = useRef<BlobPart[]>([])
+  const previousMessageCountRef = useRef(0)
   const [isHandRaised, setIsHandRaised] = useState(false)
 
   const isInstructorView = effectiveMode === "instructor"
@@ -847,6 +861,23 @@ function ClassroomUI({
       room.off(RoomEvent.DataReceived, handleData)
     }
   }, [room, isAr, toast, effectiveMode])
+
+  useEffect(() => {
+    const previousCount = previousMessageCountRef.current
+    if (messages.length > previousCount) {
+      const incomingCount = messages.slice(previousCount).filter((message) => !message.isSelf).length
+      if (!showChat && incomingCount > 0) {
+        setUnreadChatCount((count) => count + incomingCount)
+      }
+    }
+    previousMessageCountRef.current = messages.length
+  }, [messages, showChat])
+
+  useEffect(() => {
+    if (showChat) {
+      setUnreadChatCount(0)
+    }
+  }, [showChat])
 
   const toggleRaiseHand = async () => {
     const nextRaised = !isHandRaised
@@ -981,7 +1012,15 @@ function ClassroomUI({
         <div className="min-h-0 flex-1">
           <VideoStage isAr={isAr} compact={false} />
         </div>
-        {showChat && <ChatPanel isAr={isAr} onClose={() => setShowChat(false)} />}
+        {showChat && (
+          <ChatPanel
+            isAr={isAr}
+            onClose={() => setShowChat(false)}
+            messages={messages}
+            send={send}
+            isSending={isSending}
+          />
+        )}
       </div>
 
       <div className="flex shrink-0 items-center justify-between gap-2 border-t bg-background/95 px-2 py-1.5">
@@ -991,10 +1030,21 @@ function ClassroomUI({
             variant={showChat ? "default" : "secondary"}
             size="sm"
             onClick={() => setShowChat((v) => !v)}
+            className="relative"
             title={isAr ? "المحادثة" : "Chat"}
           >
             <MessageSquare className="me-2 h-4 w-4" />
             {isAr ? "المحادثة" : "Chat"}
+            {!showChat && unreadChatCount > 0 && (
+              <span
+                className={cn(
+                  "absolute -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white",
+                  isAr ? "-left-1" : "-right-1"
+                )}
+              >
+                {unreadChatCount > 99 ? "99+" : unreadChatCount}
+              </span>
+            )}
           </Button>
           <Button
             variant="secondary"
