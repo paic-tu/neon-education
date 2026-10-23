@@ -59,6 +59,8 @@ export function CourseShell({ lang, courseId, course, progress, children }: Cour
   const segments = pathname.split("/")
   const pathWithoutLocale = "/" + segments.slice(2).join("/")
   const baseWithoutLocale = `/student/course/${courseId}`
+  const isLiveRoute =
+    pathWithoutLocale === `${baseWithoutLocale}/live` || pathWithoutLocale.startsWith(`${baseWithoutLocale}/live/`)
 
   const navItems = [
     { suffix: "", label: isAr ? "المحتوى التعليمي" : "Content", icon: BookOpen },
@@ -192,7 +194,9 @@ export function CourseShell({ lang, courseId, course, progress, children }: Cour
         </div>
 
         {/* Scrollable page content */}
-        <div className="flex-1 overflow-y-auto scrollbar-hide p-6">{children}</div>
+        <div className={cn("flex-1 scrollbar-hide", isLiveRoute ? "overflow-hidden p-0" : "overflow-y-auto p-6")}>
+          {children}
+        </div>
       </div>
     </div>
   )

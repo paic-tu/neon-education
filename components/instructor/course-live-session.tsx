@@ -68,7 +68,7 @@ export function CourseLiveSession({ courseId, isAr, user, initialIsStreaming }: 
   const roomName = `course-${courseId}`
 
   return (
-    <div className="relative -m-8 h-screen">
+    <div className="relative -m-8 h-[100svh] sm:h-screen">
       <div className={cn("absolute top-4 z-50", isAr ? "right-4" : "left-4")}>
         <Button variant="destructive" size="sm" onClick={() => setStreamingStatus(false)} disabled={isUpdating}>
           {isUpdating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <PhoneOff className="h-4 w-4 mr-2" />}

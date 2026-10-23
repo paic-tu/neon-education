@@ -3,14 +3,11 @@
 import {
   LiveKitRoom,
   useRoomContext,
-  GridLayout,
-  TrackLoop,
   VideoTrack,
   useTracks,
   useIsMuted,
   useIsSpeaking,
   useParticipantInfo,
-  useTrackRefContext,
   isTrackReference,
   RoomAudioRenderer,
   ControlBar,
@@ -26,6 +23,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react"
 import { createPortal } from "react-dom"
@@ -175,6 +173,20 @@ function parseRole(metadata?: string): string | null {
   }
 }
 
+function parseUserId(metadata?: string): string | null {
+  if (!metadata) return null
+  try {
+    const parsed = JSON.parse(metadata)
+    return typeof parsed?.userId === "string" && parsed.userId ? parsed.userId : null
+  } catch {
+    return null
+  }
+}
+
+function getParticipantKey(track: TrackReferenceOrPlaceholder): string {
+  return parseUserId(track.participant.metadata) || track.participant.identity
+}
+
 function getInitials(name?: string): string {
   if (!name) return "?"
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -266,8 +278,6 @@ function LiveSessionHost({
     return user.role === "instructor" || user.role === "admin" ? "instructor" : "student"
   }, [mode, user.role])
 
-  const shouldAutoEnableAv = effectiveMode === "instructor"
-
   if (!container) return null
 
   let body: ReactNode
@@ -295,8 +305,8 @@ function LiveSessionHost({
   } else {
     body = (
       <LiveKitRoom
-        video={shouldAutoEnableAv}
-        audio={shouldAutoEnableAv}
+        video={false}
+        audio={false}
         token={token}
         serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
         data-lk-theme="default"
@@ -357,46 +367,106 @@ function useUniqueTracks() {
   return useMemo(() => {
     const byParticipant = new Map<string, TrackReferenceOrPlaceholder>()
     for (const track of tracks) {
-      const identity = track.participant.identity
-      const existing = byParticipant.get(identity)
+      const participantKey = getParticipantKey(track)
+      const existing = byParticipant.get(participantKey)
       if (!existing) {
-        byParticipant.set(identity, track)
+        byParticipant.set(participantKey, track)
         continue
       }
       const trackIsScreenShare = track.source === Track.Source.ScreenShare
       const existingIsScreenShare = existing.source === Track.Source.ScreenShare
       if (trackIsScreenShare && !existingIsScreenShare) {
-        byParticipant.set(identity, track)
+        byParticipant.set(participantKey, track)
       } else if (trackIsScreenShare === existingIsScreenShare) {
         if (isTrackReference(track) && !isTrackReference(existing)) {
-          byParticipant.set(identity, track)
+          byParticipant.set(participantKey, track)
         }
       }
     }
-    return [...byParticipant.values()]
+
+    // Keep a deterministic order (instructor first, then by user id / identity)
+    // so tiles never swap places while the session is running.
+    return [...byParticipant.values()].sort((a, b) => {
+      const aInstructor = parseRole(a.participant.metadata) === "instructor" ? 0 : 1
+      const bInstructor = parseRole(b.participant.metadata) === "instructor" ? 0 : 1
+      if (aInstructor !== bInstructor) return aInstructor - bInstructor
+      return getParticipantKey(a).localeCompare(getParticipantKey(b))
+    })
   }, [tracks])
+}
+
+function useIsNarrow(query = "(max-width: 640px)") {
+  const [narrow, setNarrow] = useState(false)
+
+  useEffect(() => {
+    const mql = window.matchMedia(query)
+    setNarrow(mql.matches)
+    const onChange = () => setNarrow(mql.matches)
+    mql.addEventListener("change", onChange)
+    return () => mql.removeEventListener("change", onChange)
+  }, [query])
+
+  return narrow
+}
+
+/** Fixed, deterministic grid so tiles keep the same size and position. */
+function gridStyle(count: number, narrow: boolean): CSSProperties {
+  const base: CSSProperties = {
+    display: "grid",
+    minHeight: 0,
+    minWidth: 0,
+    height: "100%",
+    alignContent: "stretch",
+    justifyContent: "stretch",
+    gridAutoFlow: "row",
+    gridAutoRows: "minmax(0, 1fr)",
+  }
+
+  if (count <= 1) return { ...base, gridTemplateColumns: "1fr", gridTemplateRows: "1fr" }
+  if (narrow) {
+    if (count === 2) return { ...base, gridTemplateColumns: "1fr", gridTemplateRows: "1fr 1fr" }
+    if (count <= 4) return { ...base, gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr 1fr" }
+    return {
+      ...base,
+      gridTemplateColumns: "1fr 1fr",
+      gridTemplateRows: `repeat(${Math.ceil(count / 2)}, 1fr)`,
+    }
+  }
+  if (count === 2) return { ...base, gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr" }
+  if (count <= 4) return { ...base, gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr 1fr" }
+  if (count <= 6) return { ...base, gridTemplateColumns: "1fr 1fr 1fr", gridTemplateRows: "1fr 1fr" }
+  return {
+    ...base,
+    gridTemplateColumns: "1fr 1fr 1fr",
+    gridTemplateRows: `repeat(${Math.ceil(count / 3)}, 1fr)`,
+  }
 }
 
 function VideoStage({ isAr, compact }: { isAr: boolean; compact: boolean }) {
   const tracks = useUniqueTracks()
+  const narrow = useIsNarrow()
 
   if (compact) {
     const preferred =
       tracks.find((t) => parseRole(t.participant.metadata) === "instructor") || tracks[0]
     return (
-      <div className="h-full w-full bg-background">
+      <div className="h-full w-full overflow-hidden bg-background">
         {preferred ? <VideoTile trackRef={preferred} isAr={isAr} /> : <EmptyStage />}
       </div>
     )
   }
 
   return (
-    <div className="h-full w-full p-3">
-      <GridLayout tracks={tracks} className="h-full">
-        <TrackLoop tracks={tracks}>
-          <ParticipantVideoTile isAr={isAr} />
-        </TrackLoop>
-      </GridLayout>
+    <div className="h-full w-full overflow-hidden p-2 sm:p-3">
+      {tracks.length === 0 ? (
+        <EmptyStage />
+      ) : (
+        <div className="h-full w-full gap-2 overflow-hidden touch-none" style={gridStyle(tracks.length, narrow)}>
+          {tracks.map((track) => (
+            <VideoTile key={getParticipantKey(track)} trackRef={track} isAr={isAr} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -418,7 +488,7 @@ function VideoTile({ trackRef, isAr }: { trackRef: TrackReferenceOrPlaceholder; 
   return (
     <div
       className={cn(
-        "relative flex h-full w-full items-center justify-center overflow-hidden rounded-xl border bg-muted/40",
+        "relative flex h-full min-h-0 w-full min-w-0 items-center justify-center overflow-hidden rounded-xl border bg-muted/40",
         isSpeaking && !isScreenShare && "border-primary ring-2 ring-primary/60"
       )}
     >
@@ -446,7 +516,7 @@ function VideoTile({ trackRef, isAr }: { trackRef: TrackReferenceOrPlaceholder; 
 
       <div
         className={cn(
-          "absolute bottom-2 flex max-w-[calc(100%-1rem)] items-center gap-2 rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm",
+          "pointer-events-none absolute bottom-2 flex max-w-[calc(100%-1rem)] items-center gap-2 rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm",
           isAr ? "right-2" : "left-2"
         )}
       >
@@ -455,11 +525,6 @@ function VideoTile({ trackRef, isAr }: { trackRef: TrackReferenceOrPlaceholder; 
       </div>
     </div>
   )
-}
-
-function ParticipantVideoTile({ isAr }: { isAr: boolean }) {
-  const trackRef = useTrackRefContext()
-  return <VideoTile trackRef={trackRef} isAr={isAr} />
 }
 
 const CHAT_TOPIC = "neon-live-chat"
@@ -696,23 +761,21 @@ function ClassroomUI({
   const [raisedHands, setRaisedHands] = useState<string[]>([])
   const [isRecording, setIsRecording] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
-  const [showChat, setShowChat] = useState(true)
+  const [showChat, setShowChat] = useState(false)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recordedChunksRef = useRef<BlobPart[]>([])
   const [isHandRaised, setIsHandRaised] = useState(false)
 
   const isInstructorView = effectiveMode === "instructor"
 
-  // Initial mute for students
+  // Camera and microphone stay off until the user enables them explicitly.
   useEffect(() => {
-    if (effectiveMode !== "student") return
-
     const applyDefaultMute = async () => {
       try {
-        await room.localParticipant.setMicrophoneEnabled(false)
+        await room.localParticipant.setCameraEnabled(false)
       } catch {}
       try {
-        await room.localParticipant.setCameraEnabled(false)
+        await room.localParticipant.setMicrophoneEnabled(false)
       } catch {}
     }
 
@@ -726,7 +789,7 @@ function ClassroomUI({
     return () => {
       room.off(RoomEvent.Connected, onConnected)
     }
-  }, [room, effectiveMode])
+  }, [room])
 
   // Data channel handlers (Raise Hand, Mute All)
   useEffect(() => {

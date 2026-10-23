@@ -416,8 +416,8 @@ function AdminNav({ user, isCollapsed }: AdminSidebarProps) {
                 </div>
               )}
               {liveCourses.map((c) => {
-                const hrefWithLocale = `/${locale}/instructor/courses/${c.id}/live`
-                const isActive = pathWithoutLocale.startsWith(`/instructor/courses/${c.id}/live`)
+                const hrefWithLocale = `/${locale}/student/course/${c.id}/live`
+                const isActive = pathWithoutLocale.startsWith(`/student/course/${c.id}/live`)
                 return (
                   <Link
                     key={c.id}
@@ -436,7 +436,7 @@ function AdminNav({ user, isCollapsed }: AdminSidebarProps) {
               })}
               {!loadingLive && liveCourses.length === 0 && (
                 <div className="px-3 py-2 text-xs text-muted-foreground">
-                  {isAr ? "لا يوجد بث مباشر الآن" : "No live courses now"}
+                  {isAr ? "لا توجد دورات مباشرة" : "No live courses"}
                 </div>
               )}
             </div>

@@ -34,8 +34,10 @@ export async function GET() {
     })
     rows = result
   } else if (role === "admin") {
+    // Admins see every live-enabled course so they can step into a session
+    // at any time, not only while a broadcast is already running.
     const result = await db.query.courses.findMany({
-      where: eq(courses.isStreaming, true),
+      where: eq(courses.isLive, true),
       orderBy: [desc(courses.updatedAt)],
       columns: { id: true, titleEn: true, titleAr: true, isLive: true },
     })

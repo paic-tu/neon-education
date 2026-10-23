@@ -112,7 +112,7 @@ export default async function LiveClassroomPage({
   const roomName = `course-${courseId}`
 
   return (
-    <div className="h-[75vh] rounded-lg border overflow-hidden">
+    <div className="h-full min-h-0 overflow-hidden rounded-none border-0 sm:rounded-lg sm:border">
       <LiveClassroomClient
         roomName={roomName}
         user={{
