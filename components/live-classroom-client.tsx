@@ -14,7 +14,7 @@ import {
   type TrackReferenceOrPlaceholder,
 } from "@livekit/components-react"
 import "@livekit/components-styles"
-import { DataPacket_Kind, RoomEvent, Track } from "livekit-client"
+import { DataPacket_Kind, Room as ClientRoom, RoomEvent, Track } from "livekit-client"
 import {
   createContext,
   useCallback,
@@ -214,10 +214,21 @@ function LiveSessionHost({
   // around the document without ever being recreated, so the LiveKitRoom — and
   // therefore the connection — is never unmounted by navigation.
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const roomRef = useRef<ClientRoom | null>(null)
   if (containerRef.current === null && typeof document !== "undefined") {
     containerRef.current = document.createElement("div")
   }
+  if (roomRef.current === null) {
+    roomRef.current = new ClientRoom({
+      // Keep the connection alive across SPA navigation and avoid a race that
+      // can surface in dev/mobile reconnects when tracks arrive before the
+      // participant list is fully rehydrated.
+      disconnectOnPageLeave: false,
+      singlePeerConnection: false,
+    })
+  }
   const container = containerRef.current
+  const room = roomRef.current
 
   const expanded = Boolean(inlineTarget)
 
@@ -278,7 +289,7 @@ function LiveSessionHost({
     return user.role === "instructor" || user.role === "admin" ? "instructor" : "student"
   }, [mode, user.role])
 
-  if (!container) return null
+  if (!container || !room) return null
 
   let body: ReactNode
   if (joinError) {
@@ -305,6 +316,8 @@ function LiveSessionHost({
   } else {
     body = (
       <LiveKitRoom
+        room={room}
+        connect={Boolean(token)}
         video={false}
         audio={false}
         token={token}
