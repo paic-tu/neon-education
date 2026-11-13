@@ -55,7 +55,7 @@ export function BuyerEventTickets({ lang, orderId }: { lang: string; orderId?: s
           {tickets.map((ticket) => {
             const expired = new Date(ticket.eventEndsAt) < new Date()
             const usable = !ticket.revokedAt && !ticket.checkedInAt && !expired
-            return <Card key={ticket.id} className="overflow-hidden border-primary/20"><div className="bg-[#17374A] px-5 py-4 text-white"><div className="flex justify-between gap-3"><h3 className="font-bold">{isAr ? ticket.nameAr : ticket.nameEn}</h3><Ticket className="h-5 w-5 shrink-0 text-[#E09F48]" /></div><p className="mt-2 text-xs text-white/70">{isAr ? "التذكرة" : "Ticket"} #{ticket.ordinal}</p></div><CardContent className="space-y-4 pt-5">
+            return <Card key={ticket.id} className="min-w-0 overflow-hidden border-border bg-card text-card-foreground shadow-sm"><div className="bg-[#17374A] px-5 py-4 text-white"><div className="flex justify-between gap-3"><h3 className="min-w-0 break-words font-bold">{isAr ? ticket.nameAr : ticket.nameEn}</h3><Ticket className="h-5 w-5 shrink-0 text-[#E09F48]" /></div><p className="mt-2 text-xs text-white/70">{isAr ? "التذكرة" : "Ticket"} #{ticket.ordinal}</p></div><CardContent className="space-y-4 pt-5">
               <p className="flex items-center gap-2 text-sm"><MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />{ticket.eventLocation}</p><p className="text-xs text-muted-foreground">{new Date(ticket.eventStartsAt).toLocaleString(isAr ? "ar-SA" : "en-GB")} - {new Date(ticket.eventEndsAt).toLocaleString(isAr ? "ar-SA" : "en-GB")}</p>
               {usable && ticket.qr ? (
                 <div className="space-y-3 text-center">

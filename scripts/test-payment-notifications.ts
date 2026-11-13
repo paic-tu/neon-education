@@ -5,10 +5,11 @@ import { readFileSync } from "node:fs"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import { buildPaymentReceipt } from "../lib/payments/payment-email-content"
+import { renderSubscriptionSuccessEmail } from "../lib/emails"
 
-test("إيصال الدفع يستخدم رابط نيون ولا يحتوي رمز دخول", () => {
+test("إيصال الدفع يستخدم قالب نيون الموحد ورابطاً خاصاً دون رمز دخول", async () => {
   const id = randomUUID()
-  const receipt = buildPaymentReceipt({
+  const receipt = await buildPaymentReceipt({
     id, name: "<script>alert(1)</script>", totalAmount: "1.00", paidAt: new Date(),
     paymentProvider: "stream", ticketCount: 1,
     items: [{ name: "neon ora", price: "1.00", quantity: 1, isEventTicket: true }],
@@ -18,10 +19,15 @@ test("إيصال الدفع يستخدم رابط نيون ولا يحتوي ر�
   assert(!receipt.html.includes("<script>"))
   assert(!receipt.html.includes("NEVT1."))
   assert(receipt.html.includes("1.00 ريال"))
+  assert(receipt.html.includes("neon-bg"))
+  assert(receipt.html.includes("Tajawal"))
+  assert(receipt.html.includes("https://linktr.ee/neonedusa"))
+  assert(receipt.html.includes('dir="rtl"'))
+  assert(receipt.html.includes("&lt;script&gt;"))
 })
 
-test("طلبات المتجر والدورات تحصل على إيصال دون رابط باركود", () => {
-  const receipt = buildPaymentReceipt({
+test("طلبات المتجر والدورات تحصل على إيصال دون رابط باركود", async () => {
+  const receipt = await buildPaymentReceipt({
     id: randomUUID(), name: "Buyer", totalAmount: "10.00", paidAt: new Date(),
     paymentProvider: "manual", ticketCount: 0,
     items: [{ name: "Course", price: "10.00", quantity: 1, isEventTicket: false }],
@@ -30,10 +36,20 @@ test("طلبات المتجر والدورات تحصل على إيصال دون
   assert(receipt.text.includes("دفع أكدته الإدارة"))
 })
 
+test("قالب الاشتراك الأصلي يبقى كما هو عند عدم تمرير إيصال", async () => {
+  const email = await renderSubscriptionSuccessEmail({
+    language: "en", planName: "Neon Plan", dashboardUrl: "https://neonedu.org/en/student/dashboard",
+  })
+  assert(email.text.includes("Your subscription is active"))
+  assert(email.text.includes("Neon Plan"))
+  assert(!email.html.includes("Event tickets:"))
+  assert(email.html.includes("neon-bg"))
+})
+
 test("حجز البريد في قاعدة البيانات والتكرار وإعادة المحاولة", async (t) => {
   // عنوان غير مستخدم يمنع فتح قاعدة محلية؛ جميع الاستعلامات تمر عبر قاعدة الاختبار المحقونة.
   process.env.DATABASE_URL ||= "postgresql://unused@localhost/unused"
-  const { notifyPaidOrder } = await import("../lib/payments/payment-notifications")
+  const { notifyPaidOrder, retryBuyerPaymentReceipts } = await import("../lib/payments/payment-notifications")
   const pg = new PGlite()
   const connection = drizzle(pg)
   try {
@@ -84,6 +100,26 @@ test("حجز البريد في قاعدة البيانات والتكرار وإ
       const id = await fixture()
       await pg.query("INSERT INTO payment_email_notifications (order_id,claim_id,claimed_at) VALUES ($1,$2,NOW()-INTERVAL '11 minutes')", [id, randomUUID()])
       assert(await notifyPaidOrder(id, connection, async () => ({ success: true })))
+    })
+    await t.test("إعادة المحاولة تخص المشتري والطلبات المدفوعة الحديثة فقط", async () => {
+      const id = await fixture()
+      const { rows: buyer } = await pg.query<{ user_id: string }>("SELECT user_id FROM orders WHERE id=$1", [id])
+      const other = await fixture()
+      const old = await fixture()
+      await pg.query("UPDATE orders SET user_id=$1,paid_at=NOW()-INTERVAL '8 days' WHERE id=$2", [buyer[0].user_id, old])
+      const pending = await fixture("pending")
+      await pg.query("UPDATE orders SET user_id=$1 WHERE id=$2", [buyer[0].user_id, pending])
+      let sends = 0
+      const send = async (message: any) => {
+        assert.equal(message.idempotencyKey, `neon-paid-order/${id}`)
+        sends++
+        return { success: true }
+      }
+      await retryBuyerPaymentReceipts(buyer[0].user_id, connection, send)
+      await retryBuyerPaymentReceipts(buyer[0].user_id, connection, send)
+      assert.equal(sends, 1)
+      const result = await pg.query<{ count: number }>("SELECT count(*)::int AS count FROM payment_email_notifications WHERE order_id IN ($1,$2,$3)", [other, old, pending])
+      assert.equal(result.rows[0].count, 0)
     })
   } finally {
     await pg.close()

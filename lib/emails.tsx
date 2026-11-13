@@ -14,6 +14,7 @@ import LoginAlertEmail from "@/emails/login-alert-email"
 import SupportTicketEmail from "@/emails/support-ticket-email"
 import PaymentFailedEmail from "@/emails/payment-failed-email"
 import SubscriptionSuccessEmail from "@/emails/subscription-success-email"
+import type { PaymentReceiptDetails } from "@/emails/subscription-success-email"
 import CourseCompletedEmail from "@/emails/course-completed-email"
 import ErrorAlertEmail from "@/emails/error-alert-email"
 import AudioSummaryEmail from "@/emails/audio-summary-email"
@@ -190,12 +191,14 @@ export async function renderSubscriptionSuccessEmail(props: {
   language: Language
   planName?: string
   dashboardUrl?: string
+  receipt?: PaymentReceiptDetails
 }) {
   return renderEmail(
     <SubscriptionSuccessEmail
       language={props.language}
       planName={props.planName}
       dashboardUrl={props.dashboardUrl ?? `${baseUrl}/${props.language}/portal/dashboard`}
+      receipt={props.receipt}
     />
   )
 }

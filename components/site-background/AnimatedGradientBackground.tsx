@@ -10,7 +10,7 @@ import { DARK_THEME, LIGHT_THEME } from "./themes"
 import styles from "./SiteBackground.module.css"
 
 // الصفحات ذات الخلفية المعتمة لا تحتاج تشغيل طبقات الرسم والحركة خلف محتواها.
-const OPAQUE_PAGE_PATH_PATTERN = /^\/[a-z]{2}\/(student|instructor|admin|orders)(\/|$)/
+const OPAQUE_PAGE_PATH_PATTERN = /^\/[a-z]{2}\/(student|instructor|admin|orders|tickets)(\/|$)/
 
 export function AnimatedGradientBackground() {
   const { theme } = useTheme()

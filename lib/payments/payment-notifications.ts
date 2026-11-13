@@ -8,6 +8,18 @@ type Connection = { execute: (query: ReturnType<typeof sql>) => Promise<any> }
 type MailSender = (message: { to: string; subject: string; text: string; html: string; idempotencyKey?: string }) => Promise<{ success: boolean; messageId?: string; error?: string }>
 const rows = (result: any): any[] => Array.isArray(result) ? result : result.rows || []
 
+export async function retryBuyerPaymentReceipts(userId: string, connection: Connection = db, send: MailSender = sendMail) {
+  const pending = rows(await connection.execute(sql`
+    SELECT o.id FROM orders o
+    LEFT JOIN payment_email_notifications n ON n.order_id = o.id
+    WHERE o.user_id = ${userId}::uuid AND o.status = 'paid' AND o.paid_at IS NOT NULL
+      AND o.paid_at > NOW() - INTERVAL '7 days' AND n.sent_at IS NULL
+      AND (n.claimed_at IS NULL OR n.claimed_at < NOW() - INTERVAL '10 minutes')
+    ORDER BY o.paid_at DESC LIMIT 3
+  `))
+  for (const order of pending) await notifyPaidOrder(order.id, connection, send)
+}
+
 export async function notifyPaidOrder(orderId: string, connection: Connection = db, send: MailSender = sendMail) {
   const claimId = randomUUID()
   let claimed = false
@@ -45,7 +57,7 @@ export async function notifyPaidOrder(orderId: string, connection: Connection = 
       FROM order_items i LEFT JOIN products p ON p.id = i.product_id
       LEFT JOIN courses c ON c.id = i.course_id WHERE i.order_id = ${orderId}::uuid
     `))
-    const receipt = buildPaymentReceipt({ ...order, items })
+    const receipt = await buildPaymentReceipt({ ...order, items })
     const delivered = await send({
       to: order.email, subject: receipt.subject, html: receipt.html, text: receipt.text,
       idempotencyKey: `neon-paid-order/${orderId}`,

@@ -57,6 +57,36 @@ test("المعرّف المحفوظ لشخص آخر لا يُستخدم", async 
   assert.equal(await ensureCheckoutConsumer(input, deps), newId)
 })
 
+test("رقم الجوال المرتبط بحساب آخر يستخدم عميلاً مستقلاً بالبريد", async () => {
+  const deps = dependencies()
+  const attempts: any[] = []
+  deps.create = async (data) => {
+    attempts.push(data)
+    if (data.phone_number) throw new Error("PHONE_ALREADY_REGISTERED")
+    return { id: newId, name: "Buyer" }
+  }
+  deps.findByPhone = async () => ({ id: oldId, phone_number: input.phone, external_id: "neon_user_other", email: "other@example.test" })
+  assert.equal(await ensureCheckoutConsumer({ ...input, storedId: null }, deps), newId)
+  assert.equal(attempts.length, 2)
+  assert.equal(attempts[1].phone_number, undefined)
+  assert.equal(attempts[1].email, input.email)
+  assert.equal(attempts[1].external_id, `neon_user_${userId}`)
+  assert.deepEqual(attempts[1].communication_methods, ["EMAIL"])
+})
+
+test("تعارض البريد لا يربط حساباً آخر ولا يعيد الإنشاء بلا نهاية", async () => {
+  const deps = dependencies()
+  let attempts = 0
+  deps.create = async () => { attempts++; throw new Error("DUPLICATE_CONSUMER") }
+  deps.findByPhone = async () => ({ id: oldId, phone_number: input.phone, external_id: "neon_user_other" })
+  await assert.rejects(ensureCheckoutConsumer({ ...input, storedId: null }, deps))
+  assert.equal(attempts, 2)
+  attempts = 0
+  deps.findByEmail = async () => ({ id: oldId, email: input.email, external_id: "neon_user_other" })
+  await assert.rejects(ensureCheckoutConsumer({ ...input, storedId: null }, deps))
+  assert.equal(attempts, 1)
+})
+
 test("مطابقة رقم الجوال وحده لا تتجاوز تعارض البريد", async () => {
   const deps = dependencies()
   deps.get = async () => ({ id: oldId, phone_number: input.phone, email: "other@example.test" })

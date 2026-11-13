@@ -621,7 +621,7 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
                 currency: "SAR",
                 maxNumberOfPayments: 1,
                 organizationConsumerId: consumerId,
-                contactInformationType: phoneE164 ? "PHONE" : "EMAIL",
+                contactInformationType: email ? "EMAIL" : "PHONE",
                 successRedirectUrl,
                 failureRedirectUrl,
                 items: itemsForStream,

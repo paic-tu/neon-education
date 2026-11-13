@@ -73,8 +73,14 @@ export async function ensureCheckoutConsumer(input: CheckoutConsumerInput, depen
     ]
     const existing = candidates.find((candidate) => candidate && belongsToUser(candidate, input)
       && z.string().uuid().safeParse(candidate.id).success)
-    if (!existing) throw new Error("تعذر ربط بياناتك بعميل الدفع. يرجى مراجعة البريد ورقم الجوال أو التواصل مع الدعم.")
-    return String(existing.id)
+    if (existing) return String(existing.id)
+    const phoneOwner = candidates[0]
+    // الرقم المشترك لا يبرر ربط الحساب بعميل شخص آخر؛ نستخدم بريده كقناة مستقلة.
+    if (input.phone && z.string().email().safeParse(input.email).success
+      && phoneOwner && !belongsToUser(phoneOwner, input) && !candidates[1]) {
+      return ensureCheckoutConsumer({ ...input, storedId: null, phone: "" }, dependencies)
+    }
+    throw new Error("تعذر ربط بياناتك بعميل الدفع. يرجى مراجعة البريد ورقم الجوال أو التواصل مع الدعم.")
   }
 }
 
