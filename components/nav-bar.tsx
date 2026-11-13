@@ -10,6 +10,7 @@ import {
   Menu,
   BookOpen,
   Trophy,
+  Ticket,
   ShoppingBag,
   HelpCircle,
   Info,
@@ -47,7 +48,7 @@ export function NavBar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   
   const dashboardLink = user?.role === "event_staff"
-    ? `/${language}/events`
+    ? `/${language}/events/check-in`
     : ["admin", "manager", "support"].includes(user?.role)
     ? `/${language}/admin`
     : user?.role === "instructor" 
@@ -81,6 +82,7 @@ export function NavBar() {
     { href: `/${language}/courses`, label: t("courses", language) },
     { href: `/${language}/challenges`, label: language === "ar" ? "التحديات" : "Challenges" },
     { href: `/${language}/store`, label: t("store", language) },
+    { href: `/${language}/events`, label: language === "ar" ? "الفعاليات" : "Events" },
     { href: `/${language}/consultations`, label: language === "ar" ? "الاستشارات" : "Consultations" },
   ]
   const iconGapClass = language === "ar" ? "ml-2" : "mr-2"
@@ -211,6 +213,12 @@ export function NavBar() {
                     <Button variant={pathname.endsWith("/store") ? "secondary" : "ghost"} className="w-full justify-start">
                       <ShoppingBag className={`${iconGapClass} h-4 w-4`} />
                       {t("store", language)}
+                    </Button>
+                  </Link>
+                  <Link href={`/${language}/events`} onClick={() => setMobileMenuOpen(false)}>
+                    <Button variant={pathname.endsWith("/events") ? "secondary" : "ghost"} className="w-full justify-start">
+                      <Ticket className={`${iconGapClass} h-4 w-4`} />
+                      {language === "ar" ? "الفعاليات" : "Events"}
                     </Button>
                   </Link>
                   <Link href={`/${language}/consultations`} onClick={() => setMobileMenuOpen(false)}>

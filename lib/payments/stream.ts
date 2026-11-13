@@ -2,6 +2,13 @@ import crypto from "crypto"
 
 const STREAM_API_BASE = "https://stream-app-service.streampay.sa/api/v2"
 
+export class StreamApiError extends Error {
+  constructor(message: string, public readonly status: number, public readonly payload: any) {
+    super(message)
+    this.name = "StreamApiError"
+  }
+}
+
 function getStreamApiKeyBase64() {
   const base64 = process.env.STREAM_API_KEY_BASE64
   if (base64 && base64.trim()) return base64.trim()
@@ -55,7 +62,7 @@ export async function streamRequest<T>(path: string, init: RequestInit = {}): Pr
     const baseMsg = body?.error?.message || body?.message || `Stream API error (${res.status})`
     const detailsRaw = body ? JSON.stringify(body) : text
     const details = detailsRaw && detailsRaw.length > 800 ? `${detailsRaw.slice(0, 800)}…` : detailsRaw
-    throw new Error(details ? `${baseMsg} — ${details}` : baseMsg)
+    throw new StreamApiError(details ? `${baseMsg} — ${details}` : baseMsg, res.status, body)
   }
 
   return body as T
@@ -186,7 +193,7 @@ export async function findStreamConsumerByPhone(phoneE164: string) {
   }
 
   const exact = candidates.find((c) => String(c?.phone_number || "").trim() === phone)
-  return exact || candidates[0] || null
+  return exact || null
 }
 
 export async function findStreamConsumerByEmail(email: string) {
@@ -200,7 +207,7 @@ export async function findStreamConsumerByEmail(email: string) {
   } catch {}
 
   const exact = candidates.find((c) => String(c?.email || "").trim().toLowerCase() === e)
-  return exact || candidates[0] || null
+  return exact || null
 }
 
 export function verifyStreamWebhookSignature(input: {

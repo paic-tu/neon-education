@@ -12,7 +12,8 @@ import {
 import { auth } from "@/lib/auth"
 import { and, desc, eq, isNotNull } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
-import { createStreamConsumer, createStreamPaymentLink, findStreamConsumerByEmail, findStreamConsumerByPhone, getAppBaseUrl, normalizeSaudiPhone, streamRequest } from "@/lib/payments/stream"
+import { createStreamPaymentLink, getAppBaseUrl, normalizeSaudiPhone, streamRequest } from "@/lib/payments/stream"
+import { ensureCheckoutConsumer, withConsumerRecovery } from "@/lib/payments/checkout-consumer"
 import { getTicketSigningKey } from "@/lib/event-ticket-code"
 import { issueEventTickets } from "@/lib/events"
 import { randomUUID } from "node:crypto"
@@ -420,44 +421,20 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
             }
         }
 
-        let streamConsumerId = user.streamConsumerId as string | null | undefined
         const phoneRaw = user.phoneNumber || user.phone || ""
         const phoneE164 = phoneRaw ? normalizeSaudiPhone(phoneRaw) : ""
         const email = (user.email || "").trim().toLowerCase()
         const preferredLanguage = typeof user.preferences?.preferred_language === "string" ? user.preferences.preferred_language : lang
 
-        if (!streamConsumerId) {
-          try {
-            const consumer = await createStreamConsumer({
-              name: user.name,
-              phone_number: phoneE164 || undefined,
-              email: email || undefined,
-              external_id: `neon_user_${user.id}`,
-              communication_methods: phoneE164 ? ["WHATSAPP"] : ["EMAIL"],
-              preferred_language: preferredLanguage || undefined,
-              alias: user.name,
-              comment: "Created via Store Checkout",
-            })
-            streamConsumerId = consumer.id
-          } catch (e) {
-            const msg = e instanceof Error ? e.message : "Failed"
-            const isDuplicate = msg.includes("DUPLICATE_CONSUMER") || msg.includes("Consumer already exist") || msg.includes("PHONE_ALREADY_REGISTERED")
-            if (isDuplicate) {
-              const existing = phoneE164 ? await findStreamConsumerByPhone(phoneE164) : email ? await findStreamConsumerByEmail(email) : null
-              if (existing?.id) {
-                streamConsumerId = String(existing.id)
-              } else {
-                throw e
-              }
-            } else {
-              throw e
-            }
-          }
-
-          if (streamConsumerId) {
+        const consumerInput = { userId: user.id, name: user.name, email, phone: phoneE164, preferredLanguage }
+        const resolveConsumer = async (storedId?: string | null) => {
+          const streamConsumerId = await ensureCheckoutConsumer({ ...consumerInput, storedId })
+          if (streamConsumerId !== user.streamConsumerId) {
             await db.update(users).set({ streamConsumerId, updatedAt: new Date() }).where(eq(users.id, user.id))
           }
+          return streamConsumerId
         }
+        const streamConsumerId = await resolveConsumer(user.streamConsumerId)
 
         const existingOrder = await db.query.orders.findFirst({
           where: and(eq(orders.userId, userId), eq(orders.status, "pending"), eq(orders.paymentProvider, "stream"), isNotNull(orders.paymentLinkUrl)),
@@ -475,7 +452,8 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
           },
         })
 
-        if (existingOrder?.paymentLinkUrl && Array.isArray(existingOrder.items) && existingOrder.items.length > 0) {
+        if (streamConsumerId === user.streamConsumerId && existingOrder?.paymentLinkUrl
+          && Array.isArray(existingOrder.items) && existingOrder.items.length > 0) {
           const cartKey = cart.items
             .map((it) => `${it.courseId || it.productId}:${it.quantity || 1}`)
             .slice()
@@ -638,11 +616,11 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
 
         let paymentLink: any
         try {
-            paymentLink = await createStreamPaymentLink({
+            paymentLink = await withConsumerRecovery(streamConsumerId, (consumerId) => createStreamPaymentLink({
                 name: `Neon Order ${order.id}`,
                 currency: "SAR",
                 maxNumberOfPayments: 1,
-                organizationConsumerId: streamConsumerId || undefined,
+                organizationConsumerId: consumerId,
                 contactInformationType: phoneE164 ? "PHONE" : "EMAIL",
                 successRedirectUrl,
                 failureRedirectUrl,
@@ -658,11 +636,12 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
                     preferred_language: preferredLanguage || null,
                     coupon_ids: verifiedCouponIds.length > 0 ? verifiedCouponIds : null,
                 },
-            })
+            }), () => resolveConsumer())
         } catch (e) {
             await db.delete(orderItems).where(eq(orderItems.orderId, order.id))
             await db.delete(orders).where(eq(orders.id, order.id))
-            return { error: e instanceof Error ? e.message : "Failed to create payment link" }
+            console.error("[Checkout] Payment link creation failed", e instanceof Error ? e.name : "Unknown")
+            return { error: lang === "ar" ? "تعذر تجهيز رابط الدفع. أعد المحاولة، وإذا استمرت المشكلة تواصل مع الدعم." : "Unable to prepare the payment link. Please retry or contact support." }
         }
 
         const streamAmount = Number.parseFloat(String((paymentLink as any)?.amount || ""))
@@ -717,6 +696,6 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
         return { success: true, orderId: order.id, checkoutUrl: paymentLink.url }
     } catch (error) {
         console.error("[Action] checkoutAction error:", error)
-        return { error: "Checkout failed" }
+        return { error: lang === "ar" ? "تعذر تجهيز الطلب. أعد المحاولة أو تواصل مع الدعم." : "Checkout failed. Please retry or contact support." }
     }
 }

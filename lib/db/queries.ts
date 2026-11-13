@@ -465,10 +465,12 @@ export async function getStudentDashboardData(userId: string) {
   }
 }
 
-export async function getAllStoreItems() {
+export async function getAllStoreItems(catalog?: "store" | "events") {
   try {
     const items = await db.query.products.findMany({
-      where: eq(products.isActive, true),
+      where: and(eq(products.isActive, true),
+        catalog === "events" ? eq(products.productType, "event_ticket")
+          : catalog === "store" ? not(eq(products.productType, "event_ticket")) : undefined),
       with: {
         category: true
       },

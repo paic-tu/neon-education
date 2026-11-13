@@ -1,20 +1,5 @@
-import { redirect } from "next/navigation"
-import { EventDesk } from "@/components/event-desk"
-import { NavBar } from "@/components/nav-bar"
-import { EventError, requireEventUser } from "@/lib/events"
-import type { Metadata } from "next"
+import { ProductCatalog } from "@/components/product-catalog"
 
-export const metadata: Metadata = { robots: { index: false, follow: false } }
-export const dynamic = "force-dynamic"
-
-export default async function EventsPage({ params }: { params: Promise<{ lang: string }> }) {
-  const { lang } = await params
-  try {
-    await requireEventUser()
-  } catch (e) {
-    if (e instanceof EventError && e.status === 401) redirect(`/${lang}/auth/login?callbackUrl=/${lang}/events`)
-    if (e instanceof EventError && e.status === 403) redirect(`/${lang}?error=unauthorized`)
-    throw e
-  }
-  return <div className="relative z-10 min-h-svh bg-background text-foreground"><NavBar /><main className="px-4 pb-10 pt-28 sm:px-6"><EventDesk lang={lang} /></main></div>
+export default function EventsPage() {
+  return <ProductCatalog catalog="events" />
 }
