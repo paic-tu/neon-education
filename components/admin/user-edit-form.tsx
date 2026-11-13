@@ -91,6 +91,9 @@ export function UserEditForm({ user }: { user: any }) {
               <SelectItem value="student">Student</SelectItem>
               <SelectItem value="instructor">Instructor</SelectItem>
               <SelectItem value="admin">Admin</SelectItem>
+              <SelectItem value="manager">Manager</SelectItem>
+              <SelectItem value="support">Support</SelectItem>
+              <SelectItem value="event_staff">موظف فعاليات</SelectItem>
             </SelectContent>
           </Select>
         </div>

@@ -8,11 +8,12 @@ import { logAudit, type AuditResource } from "@/lib/audit/audit-logger"
 import { sendMail } from "@/lib/mail"
 import { getSiteSettings } from "@/lib/db/queries"
 import { renderEmailChangedEmail } from "@/lib/emails"
+import { requireSameOrigin } from "@/lib/events"
 
 const updateUserSchema = z.object({
   name: z.string().min(1).optional(),
   email: z.string().email().optional(),
-  role: z.enum(["student", "instructor", "admin", "manager"]).optional(),
+  role: z.enum(["student", "instructor", "admin", "manager", "support", "event_staff"]).optional(),
   bio: z.string().optional(),
   points: z.number().optional(),
   level: z.number().optional(),
@@ -41,7 +42,8 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
 export async function PATCH(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params
   try {
-    await requirePermission("users:write")
+    const actor = await requirePermission("users:write")
+    requireSameOrigin(request)
 
     const userId = params.id
     const body = await request.json()
@@ -58,6 +60,10 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
     
     if (existing.length === 0) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
+    }
+
+    if (actor.role !== "admin" && (existing[0].role !== "student" || (data.role && data.role !== existing[0].role))) {
+      return NextResponse.json({ error: "Only admins can manage staff roles" }, { status: 403 })
     }
 
     const updateData: any = {
@@ -87,8 +93,8 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
       resource: "user" as AuditResource,
       resourceId: userId,
       changes: {
-        before: existing[0],
-        after: result[0],
+        before: { name: existing[0].name, email: existing[0].email, role: existing[0].role },
+        after: { name: result[0].name, email: result[0].email, role: result[0].role },
       },
     })
 

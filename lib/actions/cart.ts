@@ -13,6 +13,9 @@ import { auth } from "@/lib/auth"
 import { and, desc, eq, isNotNull } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { createStreamConsumer, createStreamPaymentLink, findStreamConsumerByEmail, findStreamConsumerByPhone, getAppBaseUrl, normalizeSaudiPhone, streamRequest } from "@/lib/payments/stream"
+import { getTicketSigningKey } from "@/lib/event-ticket-code"
+import { issueEventTickets } from "@/lib/events"
+import { randomUUID } from "node:crypto"
 
 function normalizeCouponIds(input: unknown) {
   if (!input) return []
@@ -216,7 +219,7 @@ export async function updateCartItemQuantityAction(cartItemId: string, quantity:
     const userId = session.user.id
 
     const q = Number(quantity)
-    if (!Number.isFinite(q) || q < 1 || q > 99) {
+    if (!Number.isInteger(q) || q < 1 || q > 99) {
       return { error: "Invalid quantity" }
     }
 
@@ -326,10 +329,18 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
         for (const item of cart.items) {
             let price = 0
             const qty = item.quantity || 1
+            if (!Number.isInteger(qty) || qty < 1 || qty > 99) return { error: "Invalid quantity" }
             if (item.course) {
                 price = parseFloat(item.course.price || "0")
                 validItems.push({ type: 'course', id: item.course.id, price, title: item.course.titleEn, quantity: qty })
             } else if (item.product) {
+                if (!item.product.isActive) return { error: "Product is unavailable" }
+                if (item.product.productType === "event_ticket") {
+                  getTicketSigningKey()
+                  if (!item.product.eventEndsAt || new Date(item.product.eventEndsAt) <= new Date()) {
+                    return { error: "Event ticket sales have ended" }
+                  }
+                }
                 price = parseFloat(item.product.price || "0")
                 validItems.push({ type: 'product', id: item.product.id, price, title: item.product.nameEn, quantity: qty })
             }
@@ -337,8 +348,10 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
         }
 
         const shouldUseStream = Boolean(process.env.STREAM_API_KEY_BASE64 || (process.env.STREAM_API_KEY && process.env.STREAM_API_SECRET))
+        const hasEventTickets = cart.items.some((item) => item.product?.productType === "event_ticket")
 
         if (!shouldUseStream) {
+            if (hasEventTickets) return { error: "Event tickets require verified gateway payment" }
             const allowManual = process.env.ALLOW_MANUAL_CHECKOUT === "true"
             if (!allowManual) {
               return { error: "Payment is not configured (Stream keys missing)" }
@@ -487,7 +500,7 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
             const payloadTotal = Number.parseFloat(String((existingOrder.gatewayPayload as any)?.amount || ""))
             const existingFinalTotal = Number.isFinite(storedTotal) ? storedTotal : Number.isFinite(payloadTotal) ? payloadTotal : null
 
-            if (existingFinalTotal !== null && existingFinalTotal <= 0) {
+            if (!hasEventTickets && existingFinalTotal !== null && existingFinalTotal <= 0) {
               await db
                 .update(orders)
                 .set({
@@ -534,7 +547,7 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
         const isFreeByCoupon = verifiedDetails.length === 1 ? safeTotal - estimateDiscount(safeTotal, verifiedDetails[0]) <= 0 : false
         const isAlreadyFree = safeTotal <= 0
 
-        if (isAlreadyFree || isFreeByCoupon) {
+        if (!hasEventTickets && (isAlreadyFree || isFreeByCoupon)) {
           const [order] = await db
             .insert(orders)
             .values({
@@ -584,11 +597,11 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
           return { success: true, orderId: order.id }
         }
 
-        const [order] = await db
-            .insert(orders)
-            .values({
+        const order = { id: randomUUID() }
+        const orderData = {
+                id: order.id,
                 userId,
-                status: "pending",
+                status: "pending" as const,
                 totalAmount: total.toString(),
                 originalAmount: total.toString(),
                 discountAmount: "0",
@@ -597,17 +610,23 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
                 notes: notes || null,
                 paymentProvider: "stream",
                 gatewayStatus: "CREATED",
-            })
-            .returning()
+        }
 
-        for (const item of validItems) {
-            await db.insert(orderItems).values({
+        const itemData = validItems.map((item) => ({
                 orderId: order.id,
                 courseId: item.type === 'course' ? item.id : null,
                 productId: item.type === 'product' ? item.id : null,
                 price: item.price.toString(),
                 quantity: item.quantity || 1
-            })
+        }))
+        // حجز كل المقاعد مع الطلب ضمن معاملة واحدة، حتى لا تبقى حجوزات جزئية.
+        if (typeof db.batch === "function") {
+          await db.batch([db.insert(orders).values(orderData), db.insert(orderItems).values(itemData)])
+        } else {
+          await db.transaction(async (tx: any) => {
+            await tx.insert(orders).values(orderData)
+            await tx.insert(orderItems).values(itemData)
+          })
         }
         const baseUrl = getAppBaseUrl()
         const successRedirectUrl = `${baseUrl}/${lang}/checkout/stream/success?order_id=${order.id}`
@@ -678,6 +697,7 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
           }
 
           await db.delete(cartItems).where(eq(cartItems.cartId, cart.id))
+          await issueEventTickets(order.id)
           revalidatePath("/cart")
           revalidatePath("/ar/cart")
           revalidatePath("/en/cart")

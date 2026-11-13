@@ -6,17 +6,19 @@ import { requirePermission } from "@/lib/rbac/require-permission"
 import { z } from "zod"
 import bcrypt from "bcryptjs"
 import { logAudit, type AuditResource } from "@/lib/audit/audit-logger"
+import { requireSameOrigin } from "@/lib/events"
 
 const createUserSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
   password: z.string().min(8),
-  role: z.enum(["student", "instructor", "admin"]).default("student"),
+  role: z.enum(["student", "instructor", "admin", "manager", "support", "event_staff"]).default("student"),
 })
 
 export async function POST(request: NextRequest) {
   try {
-    await requirePermission("users:write")
+    const actor = await requirePermission("users:write")
+    requireSameOrigin(request)
 
     const body = await request.json()
     const parseResult = createUserSchema.safeParse(body)
@@ -26,6 +28,9 @@ export async function POST(request: NextRequest) {
     }
 
     const data = parseResult.data
+    if (actor.role !== "admin" && data.role !== "student") {
+      return NextResponse.json({ error: "Only admins can assign staff roles" }, { status: 403 })
+    }
 
     // Check if user exists
     const existing = await db.select().from(users).where(eq(users.email, data.email)).limit(1)
@@ -53,7 +58,7 @@ export async function POST(request: NextRequest) {
       resource: "user" as AuditResource,
       resourceId: user.id,
       changes: {
-        after: user,
+        after: { id: user.id, name: user.name, email: user.email, role: user.role },
       },
     })
 

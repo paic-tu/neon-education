@@ -46,8 +46,11 @@ export type Permission =
   | "support:read"
   | "support:write"
   | "support:manage"
+  | "events:read"
+  | "events:checkin"
+  | "events:manage"
 
-export type Role = "student" | "instructor" | "admin" | "manager" | "support"
+export type Role = "student" | "instructor" | "admin" | "manager" | "support" | "event_staff"
 
 // Permission matrix by role
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
@@ -95,6 +98,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "support:read",
     "support:write",
     "support:manage",
+    "events:read",
+    "events:checkin",
+    "events:manage",
   ],
   manager: [
     // Content + store management, no system settings
@@ -159,6 +165,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   student: [
     // Normal user - no admin permissions
   ],
+  event_staff: ["events:read", "events:checkin"],
 }
 
 /**

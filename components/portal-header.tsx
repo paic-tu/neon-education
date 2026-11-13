@@ -69,7 +69,7 @@ export function PortalHeader({ user, mobileNav }: PortalHeaderProps) {
         {mobileNav && (
           <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="md:hidden">
+              <Button variant="ghost" size="icon" className="md:hidden" suppressHydrationWarning>
                 <Menu className="h-5 w-5" />
                 <span className="sr-only">Toggle menu</span>
               </Button>
@@ -133,7 +133,7 @@ export function PortalHeader({ user, mobileNav }: PortalHeaderProps) {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="flex items-center gap-2">
+            <Button variant="ghost" className="flex items-center gap-2" suppressHydrationWarning>
               <Avatar className="h-8 w-8">
                 <AvatarImage src={user.image || "/default-avatar.svg"} alt={user.name} />
                 <AvatarFallback>{user.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>

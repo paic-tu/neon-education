@@ -10,6 +10,7 @@ import { t } from "@/lib/i18n"
 import { getUserOrdersAction } from "@/lib/actions/order"
 import { Package, ShoppingBag } from "lucide-react"
 import { RequireAuth } from "@/components/require-auth"
+import { BuyerEventTickets } from "@/components/buyer-event-tickets"
 
 export default function OrdersPage() {
   const { language } = useLanguage()
@@ -73,8 +74,9 @@ export default function OrdersPage() {
     <RequireAuth>
       <div className="min-h-screen bg-background">
         <NavBar />
-        <main className="container mx-auto px-4 py-8">
+        <main className="container mx-auto px-4 pb-8 pt-28">
           <h1 className="text-3xl font-bold mb-8">{t("orders", language)}</h1>
+          <BuyerEventTickets lang={language} />
 
           {orders.length === 0 ? (
             <div className="text-center py-16">

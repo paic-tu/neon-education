@@ -10,6 +10,7 @@ import { getSiteSettings } from "@/lib/db/queries"
 import { renderResetPasswordEmail, renderPasswordChangedEmail } from "@/lib/emails"
 import bcrypt from "bcryptjs"
 import crypto from "crypto"
+import { requireSameOrigin } from "@/lib/events"
 
 const resetPasswordSchema = z.object({
   mode: z.enum(["link", "direct"]),
@@ -21,7 +22,8 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
   const params = await props.params
 
   try {
-    await requirePermission("users:write")
+    const actor = await requirePermission("users:write")
+    requireSameOrigin(request)
 
     const userId = params.id
     const body = await request.json()
@@ -44,6 +46,9 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     }
 
     const target = existing[0]
+    if (actor.role !== "admin" && target.role !== "student") {
+      return NextResponse.json({ error: "Only admins can reset staff passwords" }, { status: 403 })
+    }
     const lang = language === "en" ? "en" : "ar"
     const settings = await getSiteSettings()
 

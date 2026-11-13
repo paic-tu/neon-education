@@ -11,11 +11,13 @@ import {
   pgEnum,
   primaryKey,
   uniqueIndex,
+  index,
+  check,
 } from "drizzle-orm/pg-core"
-import { relations } from "drizzle-orm"
+import { relations, sql } from "drizzle-orm"
 
 // Enums
-export const roleEnum = pgEnum("role", ["student", "instructor", "admin", "manager", "support"])
+export const roleEnum = pgEnum("role", ["student", "instructor", "admin", "manager", "support", "event_staff"])
 export const difficultyEnum = pgEnum("difficulty", ["beginner", "intermediate", "advanced"])
 export const lessonTypeEnum = pgEnum("lesson_type", ["video", "article", "quiz", "assignment", "resource"])
 export const videoProviderEnum = pgEnum("video_provider", ["upload", "youtube", "vimeo", "mux"])
@@ -329,6 +331,10 @@ export const products = pgTable("products", {
   streamProductId: uuid("stream_product_id"),
   imageUrl: text("image_url"),
   stockQuantity: integer("stock_quantity").notNull().default(0),
+  productType: varchar("product_type", { length: 32 }).notNull().default("physical"),
+  eventStartsAt: timestamp("event_starts_at", { withTimezone: true }),
+  eventEndsAt: timestamp("event_ends_at", { withTimezone: true }),
+  eventLocation: text("event_location"),
   categoryId: uuid("category_id").references(() => categories.id),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -373,6 +379,39 @@ export const orderItems = pgTable("order_items", {
   courseId: uuid("course_id").references(() => courses.id),
   quantity: integer("quantity").notNull().default(1),
   price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  isEventTicket: boolean("is_event_ticket").notNull().default(false),
+})
+
+export const eventStaffAssignments = pgTable("event_staff_assignments", {
+  productId: uuid("product_id").notNull().references(() => products.id),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  assignedBy: uuid("assigned_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.productId, t.userId] }),
+}))
+
+export const eventTickets = pgTable("event_tickets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orderItemId: uuid("order_item_id").notNull().references(() => orderItems.id),
+  productId: uuid("product_id").notNull().references(() => products.id),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  ordinal: integer("ordinal").notNull(),
+  checkedInAt: timestamp("checked_in_at", { withTimezone: true }),
+  checkedInBy: uuid("checked_in_by").references(() => users.id),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  itemOrdinalUnique: uniqueIndex("event_tickets_item_ordinal_unique").on(t.orderItemId, t.ordinal),
+  ownerIndex: index("event_tickets_owner_idx").on(t.userId),
+  productIndex: index("event_tickets_product_idx").on(t.productId),
+  ordinalCheck: check("event_tickets_ordinal_check", sql`${t.ordinal} BETWEEN 1 AND 99`),
+}))
+
+export const eventScanLimits = pgTable("event_scan_limits", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  windowStartsAt: timestamp("window_starts_at", { withTimezone: true }).notNull(),
+  attempts: integer("attempts").notNull(),
 })
 
 // Certificates table

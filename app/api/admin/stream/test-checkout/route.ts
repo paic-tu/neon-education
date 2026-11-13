@@ -38,9 +38,13 @@ export async function POST(req: NextRequest) {
       ? await db.query.products.findFirst({
           where: and(eq(products.isActive, true), gt(products.price, "0")),
           orderBy: [desc(products.createdAt)],
-          columns: { id: true, nameEn: true, nameAr: true, price: true, streamProductId: true },
+          columns: { id: true, nameEn: true, nameAr: true, price: true, streamProductId: true, productType: true },
         })
       : null
+
+    if (product?.productType === "event_ticket") {
+      return NextResponse.json({ error: "Use the store checkout for event tickets" }, { status: 400 })
+    }
 
     const unitPrice = course ? course.price : product ? product.price : null
     if (!unitPrice) {

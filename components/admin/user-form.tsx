@@ -17,7 +17,7 @@ const userSchema = z.object({
   email: z.string().email("Invalid email address"),
   name: z.string().min(2, "Name must be at least 2 characters"),
   password: z.string().min(8, "Password must be at least 8 characters"),
-  role: z.enum(["student", "instructor", "admin", "manager"]),
+  role: z.enum(["student", "instructor", "admin", "manager", "support", "event_staff"]),
 })
 
 type UserFormData = z.infer<typeof userSchema>
@@ -124,6 +124,8 @@ export function UserForm() {
                       <SelectItem value="instructor">Instructor</SelectItem>
                       <SelectItem value="manager">Manager</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="support">Support</SelectItem>
+                      <SelectItem value="event_staff">موظف فعاليات</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />

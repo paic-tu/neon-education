@@ -1,14 +1,67 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { cartItems, carts, enrollments, orderItems, orders, users } from "@/lib/db/schema"
-import { and, eq, inArray, isNotNull } from "drizzle-orm"
+import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm"
 import { streamRequest, verifyStreamWebhookSignature } from "@/lib/payments/stream"
 import { sendMail } from "@/lib/mail"
 import { getSiteSettings } from "@/lib/db/queries"
 import { renderSubscriptionSuccessEmail, renderPaymentFailedEmail } from "@/lib/emails"
+import { issueEventTickets, revokeOrderTickets } from "@/lib/events"
+import { z } from "zod"
+import { verifyOrderViaStream } from "@/lib/payments/verify-order"
+
+async function processApiVerifiedWebhook(req: Request) {
+  const raw = await req.text()
+  if (raw.length > 32768) return NextResponse.json({ error: "Payload too large" }, { status: 413 })
+  let payload: any
+  try { payload = JSON.parse(raw) } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }) }
+  const data = payload?.data || {}
+  const metadata = data.custom_metadata || data.metadata || payload.custom_metadata || payload.metadata || {}
+  const uuid = (value: unknown) => z.string().uuid().safeParse(value).success ? String(value) : null
+  const orderId = uuid(metadata.order_id || metadata.orderId)
+  const linkId = uuid(data.payment_link_id || data.payment_link?.id || payload.payment_link_id)
+  const invoiceId = uuid(data.invoice_id || data.invoice?.id || payload.invoice_id
+    || (payload.entity_type === "INVOICE" ? payload.entity_id : null))
+  const paymentId = uuid(data.payment_id || data.payment?.id || payload.payment_id
+    || (payload.entity_type === "PAYMENT" ? payload.entity_id : null))
+  let order: any = null
+  if (orderId) order = await db.query.orders.findFirst({ where: eq(orders.id, orderId) })
+  if (!order && linkId) order = await db.query.orders.findFirst({ where: eq(orders.paymentLinkId, linkId) })
+  if (!order && invoiceId) order = await db.query.orders.findFirst({ where: eq(orders.invoiceId, invoiceId) })
+  if (!order && paymentId) order = await db.query.orders.findFirst({ where: eq(orders.paymentId, paymentId) })
+  if (!order || order.paymentProvider !== "stream") return NextResponse.json({ success: true }, { status: 202 })
+
+  // الإشعار غير الموقّع مجرد طلب تحقق؛ لا نثق في حالته أو مبلغه أو ملكيته.
+  const leased = await db.update(orders).set({ lastWebhookAt: new Date() })
+    .where(and(eq(orders.id, order.id), sql`(${orders.lastWebhookAt} IS NULL OR ${orders.lastWebhookAt} < NOW() - INTERVAL '5 seconds')`))
+    .returning({ id: orders.id })
+  if (!leased.length) return NextResponse.json({ error: "Retry later" }, { status: 429, headers: { "Retry-After": "5" } })
+  try {
+    const proof = await verifyOrderViaStream(order, invoiceId)
+    if (!proof) return NextResponse.json({ success: true, verified: false }, { status: 202 })
+    if (proof.state === "refunded" || proof.state === "cancelled") {
+      await db.update(orders).set({ status: "cancelled", gatewayStatus: proof.state.toUpperCase(), gatewayPayload: proof, updatedAt: new Date() })
+        .where(eq(orders.id, order.id))
+      await revokeOrderTickets(order.id)
+    } else if (proof.state === "paid") {
+      const updated = await db.update(orders).set({
+        status: "paid", paidAt: order.paidAt || new Date(), invoiceId: proof.invoiceId,
+        paymentId: proof.paymentId, gatewayStatus: "PAID", gatewayPayload: proof, updatedAt: new Date(),
+      }).where(and(eq(orders.id, order.id), ne(orders.status, "cancelled"))).returning({ id: orders.id })
+      if (updated.length) {
+        if (order.status === "paid") await issueEventTickets(order.id)
+        else await fulfillOrderCourses(order.userId, order.id)
+      }
+    }
+    return NextResponse.json({ success: true })
+  } catch {
+    return NextResponse.json({ error: "Gateway verification unavailable" }, { status: 503 })
+  }
+}
 
 async function fulfillOrderCourses(userId: string, orderId: string) {
-  const items = await db.query.orderItems.findMany({
+  await issueEventTickets(orderId)
+  const items: Array<{ courseId: string | null }> = await db.query.orderItems.findMany({
     where: and(eq(orderItems.orderId, orderId), isNotNull(orderItems.courseId)),
     columns: { courseId: true },
   })
@@ -19,7 +72,7 @@ async function fulfillOrderCourses(userId: string, orderId: string) {
     .map((v) => String(v))
 
   if (courseIds.length > 0) {
-    const existingEnrollments = await db
+    const existingEnrollments: Array<{ courseId: string }> = await db
       .select({ courseId: enrollments.courseId })
       .from(enrollments)
       .where(and(eq(enrollments.userId, userId), inArray(enrollments.courseId, courseIds)))
@@ -37,11 +90,13 @@ async function fulfillOrderCourses(userId: string, orderId: string) {
     }
   }
 
-  const userCarts = await db.select({ id: carts.id }).from(carts).where(eq(carts.userId, userId))
+  const userCarts: Array<{ id: string }> = await db.select({ id: carts.id }).from(carts).where(eq(carts.userId, userId))
   const cartIds = userCarts.map((c) => c.id)
   if (cartIds.length > 0) {
     await db.delete(cartItems).where(inArray(cartItems.cartId, cartIds))
   }
+
+  if (!courseIds.length) return
 
   // Send enrollment email
   try {
@@ -99,7 +154,7 @@ function isPaidStatus(statusRaw: string) {
 export async function POST(req: Request) {
   const secret = process.env.STREAM_WEBHOOK_SECRET
   if (!secret) {
-    return NextResponse.json({ error: "STREAM_WEBHOOK_SECRET is not set" }, { status: 500 })
+    return processApiVerifiedWebhook(req)
   }
 
   const signatureHeader = req.headers.get("x-webhook-signature")
@@ -243,8 +298,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true })
   }
 
+  if (eventType === "PAYMENT_REFUNDED") {
+    await db.update(orders).set({ status: "cancelled", gatewayStatus: "REFUNDED", lastWebhookAt: new Date(), updatedAt: new Date() })
+      .where(eq(orders.id, order.id))
+    await revokeOrderTickets(order.id)
+    return NextResponse.json({ success: true })
+  }
+
   const now = new Date()
-  const paidAt = paidAtRaw ? new Date(String(paidAtRaw)) : now
+  const parsedPaidAt = paidAtRaw ? new Date(String(paidAtRaw)) : now
+  const paidAt = Number.isNaN(parsedPaidAt.getTime()) ? now : parsedPaidAt
 
   await db
     .update(orders)
@@ -270,6 +333,7 @@ export async function POST(req: Request) {
         })
         .where(eq(orders.id, order.id))
       await notifyPaymentFailed(order.userId)
+      await revokeOrderTickets(order.id)
       return NextResponse.json({ success: true })
     }
   }
@@ -288,10 +352,19 @@ export async function POST(req: Request) {
   }
 
   if (order.status === "paid") {
+    await issueEventTickets(order.id)
     return NextResponse.json({ success: true })
   }
 
-  if (eventType === "PAYMENT_SUCCEEDED" || eventType === "PAYMENT_MARKED_AS_PAID" || isPaidStatus(statusRaw)) {
+  const hasEventItems = await db.query.orderItems.findFirst({
+    where: and(eq(orderItems.orderId, order.id), eq(orderItems.isEventTicket, true)),
+    columns: { id: true },
+  })
+  if (hasEventItems && (order.status === "cancelled" || !["PAYMENT_SUCCEEDED", "INVOICE_COMPLETED"].includes(eventType))) {
+    return NextResponse.json({ success: true })
+  }
+
+  if (eventType === "PAYMENT_SUCCEEDED" || (!hasEventItems && (eventType === "PAYMENT_MARKED_AS_PAID" || isPaidStatus(statusRaw)))) {
     await db
       .update(orders)
       .set({
@@ -300,7 +373,7 @@ export async function POST(req: Request) {
         paymentProvider: order.paymentProvider ?? "stream",
         updatedAt: now,
       })
-      .where(eq(orders.id, order.id))
+      .where(and(eq(orders.id, order.id), ne(orders.status, "cancelled")))
     await fulfillOrderCourses(order.userId, order.id)
 
     return NextResponse.json({ success: true })
@@ -319,10 +392,12 @@ export async function POST(req: Request) {
 
   const invoiceStatus = String(invoice?.status || invoice?.data?.status || "")
   const isInvoiceCompleted =
-    invoiceStatus.toUpperCase() === "COMPLETED" || invoiceStatus.toUpperCase() === "PAID" || eventType === "INVOICE_COMPLETED"
+    invoiceStatus.toUpperCase() === "COMPLETED" || invoiceStatus.toUpperCase() === "PAID" || (!hasEventItems && eventType === "INVOICE_COMPLETED")
 
   if (!isInvoiceCompleted) {
-    return NextResponse.json({ success: true })
+    return hasEventItems
+      ? NextResponse.json({ error: "Invoice payment not yet confirmed" }, { status: 503 })
+      : NextResponse.json({ success: true })
   }
 
   await db
@@ -333,7 +408,7 @@ export async function POST(req: Request) {
       paymentProvider: order.paymentProvider ?? "stream",
       updatedAt: now,
     })
-    .where(eq(orders.id, order.id))
+    .where(and(eq(orders.id, order.id), ne(orders.status, "cancelled")))
   await fulfillOrderCourses(order.userId, order.id)
 
   return NextResponse.json({ success: true })

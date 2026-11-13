@@ -5,6 +5,7 @@ import { db } from "@/lib/db"
 import { orderItems, orders, products, users } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
 import { createStreamConsumer, getAppBaseUrl, normalizeSaudiPhone, streamRequest } from "@/lib/payments/stream"
+import { requireEventUser, requireSameOrigin } from "@/lib/events"
 
 const schema = z.object({
   userId: z.string().uuid(),
@@ -44,9 +45,16 @@ export async function POST(req: NextRequest) {
 
   const p = await db.query.products.findFirst({
     where: eq(products.id, input.productId),
-    columns: { id: true, nameEn: true, nameAr: true, price: true, streamProductId: true },
+    columns: { id: true, nameEn: true, nameAr: true, price: true, streamProductId: true, productType: true },
   })
   if (!p) return NextResponse.json({ error: "Product not found" }, { status: 404 })
+  if (p.productType === "event_ticket") {
+    requireSameOrigin(req)
+    await requireEventUser(true)
+    if (!(process.env.STREAM_API_KEY_BASE64 || (process.env.STREAM_API_KEY && process.env.STREAM_API_SECRET))) {
+      return NextResponse.json({ error: "Configure Stream Pay API credentials first" }, { status: 503 })
+    }
+  }
 
   let streamConsumerId = u.streamConsumerId
   if (!streamConsumerId) {

@@ -178,6 +178,12 @@ function AdminNav({ user, isCollapsed }: AdminSidebarProps) {
           permission: "orders:read" as const,
         },
         {
+          href: "/admin/events",
+          label: isAr ? "الفعاليات والحضور" : "Events & Attendance",
+          icon: ClipboardCheck,
+          permission: "events:manage" as const,
+        },
+        {
           href: "/admin/stream-pay",
           label: "Stream Pay",
           icon: CreditCard,

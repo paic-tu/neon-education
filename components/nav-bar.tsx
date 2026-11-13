@@ -46,7 +46,9 @@ export function NavBar() {
   const [cartCount, setCartCount] = useState(0)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   
-  const dashboardLink = user?.role === "admin" 
+  const dashboardLink = user?.role === "event_staff"
+    ? `/${language}/events`
+    : ["admin", "manager", "support"].includes(user?.role)
     ? `/${language}/admin`
     : user?.role === "instructor" 
       ? `/${language}/instructor/dashboard`
@@ -150,8 +152,11 @@ export function NavBar() {
                   <Link href={dashboardLink}>{language === "ar" ? "لوحة التحكم" : "Dashboard"}</Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href={user.role === "student" ? `/${language}/student/profile` : `/${language}/instructor/profile`}>{t("profile", language)}</Link>
+                  <Link href={`/${language}/orders`}>{language === "ar" ? "طلباتي وتذاكري" : "My Orders & Tickets"}</Link>
                 </DropdownMenuItem>
+                {user.role !== "event_staff" && <DropdownMenuItem asChild>
+                  <Link href={user.role === "student" ? `/${language}/student/profile` : dashboardLink}>{t("profile", language)}</Link>
+                </DropdownMenuItem>}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={logout}
@@ -247,12 +252,12 @@ export function NavBar() {
                         </Button>
                       </Link>
                       <Link
-                        href={`/${language}/profile`}
+                        href={`/${language}/orders`}
                         onClick={() => setMobileMenuOpen(false)}
                       >
                         <Button variant="outline" className="w-full justify-start">
-                          <UserIcon className={`${iconGapClass} h-4 w-4`} />
-                          {t("profile", language)}
+                          <ShoppingBag className={`${iconGapClass} h-4 w-4`} />
+                          {language === "ar" ? "طلباتي وتذاكري" : "My Orders & Tickets"}
                         </Button>
                       </Link>
                     </>

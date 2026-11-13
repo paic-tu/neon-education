@@ -2,9 +2,10 @@ import { type NextRequest, NextResponse } from "next/server"
 import { requirePermission } from "@/lib/rbac/require-permission"
 import { z } from "zod"
 import { db } from "@/lib/db"
-import { cartItems, carts, enrollments, orders } from "@/lib/db/schema"
+import { cartItems, carts, enrollments, orders, orderItems } from "@/lib/db/schema"
 import { and, eq, inArray } from "drizzle-orm"
 import { logAudit, type AuditResource } from "@/lib/audit/audit-logger"
+import { revokeOrderTickets, requireSameOrigin } from "@/lib/events"
 
 const updateStatusSchema = z.object({
   status: z.enum(["pending", "paid", "shipped", "delivered", "cancelled"]),
@@ -15,6 +16,7 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
   const params = await props.params
   try {
     await requirePermission("orders:write")
+    requireSameOrigin(request)
 
     const orderId = params.id
     const body = await request.json()
@@ -28,6 +30,13 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
     }
 
     const now = new Date()
+    const eventItem = await db.query.orderItems.findFirst({
+      where: and(eq(orderItems.orderId, orderId), eq(orderItems.isEventTicket, true)),
+      columns: { id: true },
+    })
+    if (eventItem && status !== "cancelled") {
+      return NextResponse.json({ error: "Event ticket payment must be confirmed by the gateway" }, { status: 403 })
+    }
 
     if (status === "paid" && fulfill) {
       const order = await db.query.orders.findFirst({
@@ -81,6 +90,8 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
       })
       .where(eq(orders.id, orderId))
       .returning()
+
+    if (eventItem && status === "cancelled") await revokeOrderTickets(orderId)
 
     // Log audit
     await logAudit({

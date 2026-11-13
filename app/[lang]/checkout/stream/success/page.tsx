@@ -8,7 +8,10 @@ import { NavBar } from "@/components/nav-bar"
 import { SiteFooter } from "@/components/site-footer"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { streamRequest } from "@/lib/payments/stream"
+import { verifyOrderViaStream } from "@/lib/payments/verify-order"
+import { issueEventTickets } from "@/lib/events"
+import { BuyerEventTickets } from "@/components/buyer-event-tickets"
+import { z } from "zod"
 
 export default async function StreamCheckoutSuccessPage(props: {
   params: Promise<{ lang: string }>
@@ -16,7 +19,7 @@ export default async function StreamCheckoutSuccessPage(props: {
 }) {
   const { lang } = await props.params
   const sp = await props.searchParams
-  const orderId = sp.order_id
+  const orderId = z.string().uuid().safeParse(sp.order_id).success ? sp.order_id : undefined
 
   const user = await getCurrentUser()
   if (!user) redirect(`/${lang}/auth/login?redirectTo=/${lang}/checkout/stream/success`)
@@ -49,77 +52,76 @@ export default async function StreamCheckoutSuccessPage(props: {
   })
 
   let resolvedStatus = order?.status || "pending"
+  const hasEventItems = order ? await db.query.orderItems.findFirst({
+    where: and(eq(orderItems.orderId, order.id), eq(orderItems.isEventTicket, true)),
+    columns: { id: true },
+  }) : null
 
-  if (order && order.status !== "paid") {
-    let paymentsResp: any = null
+  if (order && order.status === "pending") {
+    let proof: Awaited<ReturnType<typeof verifyOrderViaStream>> = null
     try {
-      paymentsResp = await streamRequest<any>(`/payments?search_term=${encodeURIComponent(order.id)}&limit=10`, { method: "GET" })
+      proof = await verifyOrderViaStream(order)
     } catch {
-      paymentsResp = null
+      proof = null
     }
 
-    const payments: any[] = Array.isArray(paymentsResp?.data) ? paymentsResp.data : Array.isArray(paymentsResp) ? paymentsResp : []
-    const match =
-      payments.find((p) => String(p?.metadata?.order_id || p?.custom_metadata?.order_id || "").trim() === order.id) ||
-      payments.find((p) => String(p?.invoice_id || p?.invoice?.id || "").trim() === String(order.invoiceId || "")) ||
-      payments[0] ||
-      null
-
-    const statusRaw = String(match?.current_status || match?.status || "").toUpperCase()
-    const isPaid = statusRaw === "SUCCEEDED" || statusRaw === "SETTLED" || Boolean(match?.payed_at)
-
-    if (isPaid) {
-      await db
+    if (proof?.state === "paid") {
+      const updated = await db
         .update(orders)
         .set({
           status: "paid",
-          paidAt: match?.payed_at ? new Date(String(match.payed_at)) : new Date(),
-          paymentId: String(match?.id || order.paymentId || ""),
-          invoiceId: String(match?.invoice_id || match?.invoice?.id || order.invoiceId || ""),
-          gatewayStatus: statusRaw || order.status,
-          gatewayPayload: match || null,
+          paidAt: new Date(),
+          paymentId: proof.paymentId,
+          invoiceId: proof.invoiceId,
+          gatewayStatus: "PAID",
+          gatewayPayload: proof,
           updatedAt: new Date(),
         })
-        .where(eq(orders.id, order.id))
+        .where(and(eq(orders.id, order.id), eq(orders.status, "pending")))
+        .returning({ id: orders.id })
 
-      const items = await db.query.orderItems.findMany({
-        where: and(eq(orderItems.orderId, order.id), isNotNull(orderItems.courseId)),
-        columns: { courseId: true },
-      })
+      if (updated.length) {
+        const items = await db.query.orderItems.findMany({
+          where: and(eq(orderItems.orderId, order.id), isNotNull(orderItems.courseId)),
+          columns: { courseId: true },
+        })
 
-      for (const it of items) {
-        if (!it.courseId) continue
-        const existing = await db.query.enrollments.findFirst({
-          where: and(eq(enrollments.userId, user.id), eq(enrollments.courseId, it.courseId)),
+        for (const it of items) {
+          if (!it.courseId) continue
+          const existing = await db.query.enrollments.findFirst({
+            where: and(eq(enrollments.userId, user.id), eq(enrollments.courseId, it.courseId)),
+            columns: { id: true },
+          })
+          if (!existing) {
+            await db.insert(enrollments).values({
+              userId: user.id,
+              courseId: it.courseId,
+              status: "active",
+            })
+          }
+        }
+
+        const cart = await db.query.carts.findFirst({
+          where: eq(carts.userId, user.id),
           columns: { id: true },
         })
-        if (!existing) {
-          await db.insert(enrollments).values({
-            userId: user.id,
-            courseId: it.courseId,
-            status: "active",
-          })
+        if (cart?.id) {
+          await db.delete(cartItems).where(eq(cartItems.cartId, cart.id))
         }
-      }
 
-      const cart = await db.query.carts.findFirst({
-        where: eq(carts.userId, user.id),
-        columns: { id: true },
-      })
-      if (cart?.id) {
-        await db.delete(cartItems).where(eq(cartItems.cartId, cart.id))
+        resolvedStatus = "paid"
       }
-
-      resolvedStatus = "paid"
     } else {
       resolvedStatus = order.status
     }
   }
 
+  if (order && resolvedStatus === "paid" && hasEventItems) await issueEventTickets(order.id)
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <NavBar />
-      <main className="container mx-auto px-4 py-12 flex-1">
+      <main className="container mx-auto px-4 pb-12 pt-28 flex-1">
         <Card>
           <CardHeader>
             <CardTitle>
@@ -152,11 +154,12 @@ export default async function StreamCheckoutSuccessPage(props: {
                 <Link href={`/${lang}/student/my-courses`}>{lang === "ar" ? "دوراتي" : "My Courses"}</Link>
               </Button>
               <Button variant="outline" asChild>
-                <Link href={`/${lang}/orders`}>{lang === "ar" ? "طلباتي" : "My Orders"}</Link>
+                <Link href={`/${lang}/orders`}>{lang === "ar" ? "طلباتي وتذاكري" : "My Orders & Tickets"}</Link>
               </Button>
             </div>
           </CardContent>
         </Card>
+        {resolvedStatus === "paid" && hasEventItems && <div className="mt-6"><BuyerEventTickets lang={lang} /></div>}
       </main>
       <SiteFooter />
     </div>

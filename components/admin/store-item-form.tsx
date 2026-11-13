@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -13,7 +13,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Checkbox } from "@/components/ui/checkbox"
 import { FormLayout } from "@/components/admin/form-layout"
 import { toast } from "sonner"
-import { Loader2 } from "lucide-react"
+import { Loader2, ShieldCheck } from "lucide-react"
 
 const storeItemSchema = z.object({
   nameEn: z.string().min(1, "English name is required"),
@@ -24,17 +24,23 @@ const storeItemSchema = z.object({
   pointsCost: z.number().int().min(0).optional().nullable(),
   stock: z.number().int().min(0),
   categoryId: z.string().min(1, "Category is required").uuid("Invalid category id"),
-  streamProductId: z
-    .string()
-    .optional()
-    .or(z.literal(""))
-    .transform((v) => (v ? v : null))
-    .refine((v) => v === null || z.string().uuid().safeParse(v).success, { message: "Invalid Stream product_id" }),
   imageUrl: z.string().optional().or(z.literal("")).nullable(),
   isActive: z.boolean().default(true),
+  productType: z.enum(["physical", "event_ticket"]).default("physical"),
+  eventStartsAt: z.string().optional(),
+  eventEndsAt: z.string().optional(),
+  eventLocation: z.string().max(500).optional(),
 })
 
 type StoreItemFormData = z.infer<typeof storeItemSchema>
+
+function newCreationId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("")
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
 
 interface StoreItemFormProps {
   lang: string
@@ -52,12 +58,23 @@ interface StoreItemFormProps {
     streamProductId: string | null
     imageUrl: string | null
     isActive: boolean
+    productType?: "physical" | "event_ticket"
+    eventStartsAt?: Date | string | null
+    eventEndsAt?: Date | string | null
+    eventLocation?: string | null
   }
 }
 
 export function StoreItemForm({ lang, categories, product }: StoreItemFormProps) {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
+  const creationId = useRef<string | null>(null)
+  const isAr = lang === "ar"
+  const localDate = (value?: Date | string | null) => {
+    if (!value) return ""
+    const date = new Date(value)
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+  }
 
   const form = useForm<StoreItemFormData>({
     resolver: zodResolver(storeItemSchema),
@@ -70,24 +87,48 @@ export function StoreItemForm({ lang, categories, product }: StoreItemFormProps)
       pointsCost: product?.pointsCost ?? null,
       stock: product?.stockQuantity ?? 0,
       categoryId: product?.categoryId || categories[0]?.id || "",
-      streamProductId: product?.streamProductId ?? null,
       imageUrl: product?.imageUrl || "",
       isActive: product?.isActive ?? true,
+      productType: product?.productType ?? "physical",
+      eventStartsAt: localDate(product?.eventStartsAt),
+      eventEndsAt: localDate(product?.eventEndsAt),
+      eventLocation: product?.eventLocation ?? "",
     },
   })
 
   async function onSubmit(data: StoreItemFormData) {
     setIsLoading(true)
     try {
+      const isEvent = data.productType === "event_ticket"
+      if (isEvent && (!data.eventStartsAt || !data.eventEndsAt || !data.eventLocation?.trim()
+        || new Date(data.eventStartsAt) >= new Date(data.eventEndsAt))) {
+        throw new Error(isAr ? "حدد موقع الفعالية ووقت دخول صحيحاً" : "Enter the location and a valid admission window")
+      }
+      if (!product && !creationId.current) creationId.current = newCreationId()
       const response = await fetch(product ? `/api/admin/store/${product.id}` : "/api/admin/store", {
         method: product ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          ...data,
+          ...(!product ? { creationId: creationId.current } : {}),
+          eventStartsAt: isEvent ? new Date(data.eventStartsAt!).toISOString() : null,
+          eventEndsAt: isEvent ? new Date(data.eventEndsAt!).toISOString() : null,
+          eventLocation: isEvent ? data.eventLocation : null,
+        }),
       })
 
-      if (!response.ok) throw new Error(product ? "Failed to update store item" : "Failed to create store item")
+      if (!response.ok) {
+        const result = await response.json()
+        if (result.error === "STREAM_PRODUCT_SYNC_FAILED") {
+          throw new Error(isAr ? "تعذر إنشاء أو مزامنة منتج الدفع تلقائياً. تحقق من إعدادات Stream Pay ثم أعد المحاولة." : "Unable to sync the payment product. Check Stream Pay credentials and retry.")
+        }
+        if (result.error === "PRODUCT_CONCURRENT_UPDATE" || result.error === "CREATION_CONFLICT") {
+          throw new Error(isAr ? "تم تغيير المنتج أثناء الحفظ. حدّث الصفحة ثم أعد المحاولة." : "The product changed while saving. Refresh and retry.")
+        }
+        throw new Error(result.error || (isAr ? "تعذر حفظ المنتج" : "Failed to save product"))
+      }
 
-      toast.success(product ? "Store item updated successfully" : "Store item created successfully")
+      toast.success(isAr ? "تم حفظ المنتج وربطه بالدفع تلقائياً" : "Product saved and payment linked automatically")
       router.push(`/${lang}/admin/store`)
       router.refresh()
     } catch (error) {
@@ -100,6 +141,47 @@ export function StoreItemForm({ lang, categories, product }: StoreItemFormProps)
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <FormLayout
+          title={isAr ? "نوع المنتج" : "Product Type"}
+          description={isAr ? "تذاكر الفعاليات تصدر تلقائياً بعد الدفع المؤكد، وتستخدم مرة واحدة." : "Event tickets are issued after confirmed payment and admitted once."}
+        >
+          <FormField control={form.control} name="productType" render={({ field }) => (
+            <FormItem>
+              <FormLabel>{isAr ? "النوع" : "Type"}</FormLabel>
+              <Select onValueChange={field.onChange} value={field.value} disabled={!!product}>
+                <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                <SelectContent>
+                  <SelectItem value="physical">{isAr ? "منتج متجر" : "Store product"}</SelectItem>
+                  <SelectItem value="event_ticket">{isAr ? "تذكرة فعالية" : "Event ticket"}</SelectItem>
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )} />
+          {form.watch("productType") === "event_ticket" && (
+            <div className="grid gap-4 md:grid-cols-2">
+              <FormField control={form.control} name="eventStartsAt" render={({ field }) => (
+                <FormItem><FormLabel>{isAr ? "بداية الدخول (توقيت جهازك)" : "Admission opens (your local time)"}</FormLabel>
+                  <FormControl><Input type="datetime-local" required {...field} /></FormControl><FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="eventEndsAt" render={({ field }) => (
+                <FormItem><FormLabel>{isAr ? "نهاية الدخول (توقيت جهازك)" : "Admission closes (your local time)"}</FormLabel>
+                  <FormControl><Input type="datetime-local" required {...field} /></FormControl><FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="eventLocation" render={({ field }) => (
+                <FormItem className="md:col-span-2"><FormLabel>{isAr ? "الموقع" : "Location"}</FormLabel>
+                  <FormControl><Input required {...field} /></FormControl><FormMessage />
+                </FormItem>
+              )} />
+              <p className="text-sm text-muted-foreground md:col-span-2">
+                {isAr ? "المخزون يمثل السعة الإجمالية. الطلبات المدفوعة والمعلقة تحجز مقاعد، ويمكن تحرير المعلق بإلغائه. تعيين موظفي الدخول من صفحة الفعاليات، بواسطة الأدمن فقط."
+                  : "Stock is total capacity. Paid and pending orders reserve seats; cancel pending orders to release them. Only admins can assign event staff."}
+              </p>
+            </div>
+          )}
+        </FormLayout>
         <FormLayout title="Basic Information" description="Enter store item details">
           <div className="grid gap-4 md:grid-cols-2">
             <FormField
@@ -173,7 +255,7 @@ export function StoreItemForm({ lang, categories, product }: StoreItemFormProps)
               name="stock"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Stock</FormLabel>
+                  <FormLabel>{form.watch("productType") === "event_ticket" ? (isAr ? "سعة الفعالية" : "Event capacity") : "Stock"}</FormLabel>
                   <FormControl>
                     <Input {...field} type="number" onChange={(e) => field.onChange(Number.parseInt(e.target.value))} />
                   </FormControl>
@@ -210,24 +292,16 @@ export function StoreItemForm({ lang, categories, product }: StoreItemFormProps)
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="streamProductId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Stream product_id</FormLabel>
-                  <FormControl>
-                    <Input
-                      value={field.value || ""}
-                      onChange={field.onChange}
-                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                      dir="ltr"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="rounded-xl border border-[#2F5257]/20 bg-[#2F5257]/5 p-4 md:col-span-2">
+              <p className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck className="h-4 w-4 text-primary" />
+                {isAr ? "الربط التلقائي ببوابة الدفع" : "Automatic Payment Integration"}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                {isAr ? "عند الحفظ، يتم إنشاء منتج Stream Pay بنفس الاسم والسعر وربطه تلقائياً. لا تحتاج إلى إنشاء المنتج في البوابة أو إدخال المعرّف."
+                  : "Saving automatically creates and links a Stream Pay product with the same name and price. No manual product ID is needed."}
+              </p>
+              {product?.streamProductId && <p className="mt-2 text-xs text-muted-foreground">{isAr ? "هذا المنتج مرتبط بالدفع بالفعل." : "This product is already linked to payments."}</p>}
+            </div>
           </div>
 
           <FormField
@@ -279,7 +353,7 @@ export function StoreItemForm({ lang, categories, product }: StoreItemFormProps)
         <div className="flex gap-4">
           <Button type="submit" disabled={isLoading}>
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Create Store Item
+            {isLoading ? (isAr ? "جارٍ الحفظ والربط..." : "Saving and linking...") : isAr ? (product ? "حفظ التعديلات" : "إنشاء المنتج") : (product ? "Save Changes" : "Create Store Item")}
           </Button>
           <Button type="button" variant="outline" onClick={() => router.back()} disabled={isLoading}>
             Cancel

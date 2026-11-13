@@ -467,13 +467,24 @@ export async function getStudentDashboardData(userId: string) {
 
 export async function getAllStoreItems() {
   try {
-    return await db.query.products.findMany({
+    const items = await db.query.products.findMany({
       where: eq(products.isActive, true),
       with: {
         category: true
       },
       orderBy: [desc(products.createdAt)]
     })
+    const eventIds = items.filter((item: any) => item.productType === "event_ticket").map((item: any) => item.id)
+    if (!eventIds.length) return items
+    const reservations = await db.select({ productId: orderItems.productId, quantity: sql<number>`sum(${orderItems.quantity})::int` })
+      .from(orderItems).innerJoin(orders, eq(orders.id, orderItems.orderId))
+      .where(and(inArray(orderItems.productId, eventIds), inArray(orders.status, ["pending", "paid", "shipped", "delivered"])))
+      .groupBy(orderItems.productId)
+    const reserved = new Map<string, number>(reservations.map((row: any) => [row.productId, row.quantity]))
+    return items.map((item: any) => ({
+      ...item,
+      availableQuantity: item.productType === "event_ticket" ? Math.max(0, item.stockQuantity - (reserved.get(item.id) || 0)) : item.stockQuantity,
+    }))
   } catch (error) {
     console.error("Error fetching store items:", error)
     return []

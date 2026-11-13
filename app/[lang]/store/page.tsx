@@ -10,7 +10,7 @@ import { useLanguage } from "@/lib/language-context"
 import { useAuth } from "@/lib/auth-context"
 import { t } from "@/lib/i18n"
 import { getAllStoreItems } from "@/lib/db/queries"
-import { ShoppingCart, Package } from "lucide-react"
+import { ShoppingCart, Package, Ticket, MapPin } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import Image from "next/image"
 import { addToCartAction } from "@/lib/actions/cart"
@@ -45,7 +45,8 @@ export default function StorePage() {
     }
 
     try {
-      await addToCartAction(itemId.toString(), "product")
+      const result = await addToCartAction(itemId.toString(), "product")
+      if (result.error) throw new Error(result.error)
 
       toast({
         title: language === "ar" ? "تمت الإضافة" : "Added to cart",
@@ -95,16 +96,16 @@ export default function StorePage() {
               <Card key={item.id} className="flex flex-col border-border/70 bg-card/95 text-card-foreground shadow-xl shadow-background/15 backdrop-blur-sm transition-shadow hover:shadow-2xl">
                 <CardHeader>
                   <div className="relative h-48 w-full bg-muted rounded-lg overflow-hidden mb-4">
-                    <Image
-                      src={item.imageUrl || "/placeholder.svg?height=200&width=300&query=product"}
+                    {item.imageUrl ? <Image
+                      src={item.imageUrl}
                       alt={language === "ar" ? item.nameAr : item.nameEn}
                       fill
                       className="object-cover"
-                    />
+                    /> : <div className="flex h-full items-center justify-center bg-[#17374A] text-[#E09F48]">{item.productType === "event_ticket" ? <Ticket className="h-16 w-16" /> : <Package className="h-16 w-16" />}</div>}
                   </div>
                   <div className="flex items-start justify-between mb-2">
                     <Badge variant="secondary">
-                      {language === "ar" ? item.category_name_ar || "عام" : item.category_name_en || "General"}
+                      {item.productType === "event_ticket" ? (language === "ar" ? "تذكرة فعالية" : "Event Ticket") : (language === "ar" ? item.category?.nameAr || "عام" : item.category?.nameEn || "General")}
                     </Badge>
                     <div className="text-2xl font-bold text-primary">
                       {item.price} {language === "ar" ? "ر.س" : "SAR"}
@@ -122,13 +123,14 @@ export default function StorePage() {
                     </p>
                   )}
                   <p className="mt-2 text-sm text-foreground/70">
-                    {language === "ar" ? "المخزون:" : "Stock:"} {item.stockQuantity}
+                    {item.productType === "event_ticket" ? (language === "ar" ? "التذاكر المتاحة:" : "Available tickets:") : (language === "ar" ? "المخزون:" : "Stock:")} {item.availableQuantity ?? item.stockQuantity}
                   </p>
+                  {item.productType === "event_ticket" && <div className="mt-3 space-y-2 text-sm text-muted-foreground"><p className="flex items-center gap-2"><MapPin className="h-4 w-4" />{item.eventLocation}</p><p>{new Date(item.eventStartsAt).toLocaleString(language === "ar" ? "ar-SA" : "en-GB")}</p><p>{language === "ar" ? "تذكرة QR خاصة بعد تأكيد الدفع" : "Private QR ticket after payment confirmation"}</p></div>}
                 </CardContent>
                 <CardFooter>
-                  <Button className="w-full" onClick={() => handleAddToCart(item.id)} disabled={item.stockQuantity === 0}>
+                  <Button className="w-full" onClick={() => handleAddToCart(item.id)} disabled={(item.availableQuantity ?? item.stockQuantity) === 0 || (item.productType === "event_ticket" && new Date(item.eventEndsAt) < new Date())}>
                     <ShoppingCart className="mr-2 h-4 w-4" />
-                    {item.stockQuantity === 0 ? (language === "ar" ? "نفذ المخزون" : "Out of stock") : t("addToCart", language)}
+                    {item.productType === "event_ticket" && new Date(item.eventEndsAt) < new Date() ? (language === "ar" ? "انتهت الفعالية" : "Event ended") : (item.availableQuantity ?? item.stockQuantity) === 0 ? (language === "ar" ? "نفذ المخزون" : "Out of stock") : t("addToCart", language)}
                   </Button>
                 </CardFooter>
               </Card>

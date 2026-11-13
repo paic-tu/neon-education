@@ -70,10 +70,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               role: true,
               avatarUrl: true,
               passwordHash: true,
+              isActive: true,
             }
           })
 
-          if (!user || !user.passwordHash) {
+          if (!user || !user.isActive || !user.passwordHash) {
             console.log("[Auth] User not found or no password hash")
             return null
           }
@@ -130,35 +131,27 @@ export const getCurrentUser = async () => {
   const session = await auth()
   if (!session?.user?.id) return null
   
-  // Optimization: Trust session data for fast access
-  // Uncomment the DB fetch if you need real-time role/profile updates that bypass session duration
-  /*
-  try {
-    const fresh = await db.query.users.findFirst({
-      where: eq(users.id, session.user.id),
-      columns: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        avatarUrl: true,
-      },
-    })
-    if (fresh) {
-      return {
-        ...session.user,
-        role: fresh.role || session.user.role,
-        name: fresh.name ?? session.user.name,
-        email: fresh.email ?? session.user.email,
-        image: fresh.avatarUrl ?? session.user.image,
-      }
+  const fresh = await db.query.users.findFirst({
+    where: eq(users.id, session.user.id),
+    columns: {
+      id: true,
+      email: true,
+      name: true,
+      role: true,
+      avatarUrl: true,
+      isActive: true,
+    },
+  })
+  if (fresh?.isActive) {
+    return {
+      ...session.user,
+      role: fresh.role,
+      name: fresh.name,
+      email: fresh.email,
+      image: fresh.avatarUrl,
     }
-  } catch (e: any) {
-    console.warn("[Auth] Failed to fetch fresh user from DB, falling back to session. Error:", e.message || e)
   }
-  */
-  
-  return session.user
+  return null
 }
 
 export const currentRole = async () => {
