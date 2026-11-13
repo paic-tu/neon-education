@@ -19,7 +19,6 @@ import {
   User as UserIcon,
   LogIn,
   LogOut,
-  Calendar,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -83,7 +82,6 @@ export function NavBar() {
     { href: `/${language}/challenges`, label: language === "ar" ? "التحديات" : "Challenges" },
     { href: `/${language}/store`, label: t("store", language) },
     { href: `/${language}/events`, label: language === "ar" ? "الفعاليات" : "Events" },
-    { href: `/${language}/consultations`, label: language === "ar" ? "الاستشارات" : "Consultations" },
   ]
   const iconGapClass = language === "ar" ? "ml-2" : "mr-2"
 
@@ -221,13 +219,6 @@ export function NavBar() {
                       {language === "ar" ? "الفعاليات" : "Events"}
                     </Button>
                   </Link>
-                  <Link href={`/${language}/consultations`} onClick={() => setMobileMenuOpen(false)}>
-                    <Button variant="ghost" className="w-full justify-start">
-                      <Calendar className={`${iconGapClass} h-4 w-4`} />
-                      {language === "ar" ? "الاستشارات" : "Consultations"}
-                    </Button>
-                  </Link>
-
                   <div className="my-2 border-t" />
 
                   <Link href={`/${language}/about`} onClick={() => setMobileMenuOpen(false)}>

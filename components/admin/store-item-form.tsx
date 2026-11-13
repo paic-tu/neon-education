@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Checkbox } from "@/components/ui/checkbox"
 import { FormLayout } from "@/components/admin/form-layout"
+import { MediaUploadField } from "@/components/admin/media-upload-field"
 import { toast } from "sonner"
 import { Loader2, ShieldCheck } from "lucide-react"
 
@@ -68,6 +69,7 @@ interface StoreItemFormProps {
 export function StoreItemForm({ lang, categories, product }: StoreItemFormProps) {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
+  const [isUploadingImage, setIsUploadingImage] = useState(false)
   const creationId = useRef<string | null>(null)
   const isAr = lang === "ar"
   const localDate = (value?: Date | string | null) => {
@@ -97,6 +99,10 @@ export function StoreItemForm({ lang, categories, product }: StoreItemFormProps)
   })
 
   async function onSubmit(data: StoreItemFormData) {
+    if (isUploadingImage) {
+      toast.error(isAr ? "انتظر اكتمال رفع الصورة قبل الحفظ" : "Wait for the image upload to finish before saving")
+      return
+    }
     setIsLoading(true)
     try {
       const isEvent = data.productType === "event_ticket"
@@ -320,6 +326,33 @@ export function StoreItemForm({ lang, categories, product }: StoreItemFormProps)
           />
         </FormLayout>
 
+        <FormLayout
+          title={isAr ? "صورة المنتج أو الفعالية" : "Product or Event Image"}
+          description={isAr ? "ارفع صورة الغلاف لتظهر في بطاقة المنتج أو الفعالية." : "Upload a cover image for the product or event card."}
+        >
+          <FormField
+            control={form.control}
+            name="imageUrl"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel htmlFor="store-item-image">{isAr ? "صورة الغلاف" : "Cover Image"}</FormLabel>
+                <MediaUploadField
+                  id="store-item-image"
+                  value={field.value || ""}
+                  onChange={field.onChange}
+                  onUploadingChange={setIsUploadingImage}
+                  isAr={isAr}
+                  type="image"
+                  disabled={isLoading}
+                  placeholder={isAr ? "ارفع صورة أو أدخل رابطها" : "Upload an image or enter its URL"}
+                  helperText={isAr ? "يمكنك معاينة الصورة واستبدالها أو حذفها قبل الحفظ." : "Preview, replace, or remove the image before saving."}
+                />
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </FormLayout>
+
         <FormLayout title="Description" description="Add item description in both languages">
           <FormField
             control={form.control}
@@ -351,7 +384,7 @@ export function StoreItemForm({ lang, categories, product }: StoreItemFormProps)
         </FormLayout>
 
         <div className="flex gap-4">
-          <Button type="submit" disabled={isLoading}>
+          <Button type="submit" disabled={isLoading || isUploadingImage}>
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isLoading ? (isAr ? "جارٍ الحفظ والربط..." : "Saving and linking...") : isAr ? (product ? "حفظ التعديلات" : "إنشاء المنتج") : (product ? "Save Changes" : "Create Store Item")}
           </Button>

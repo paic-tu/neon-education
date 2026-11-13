@@ -10,6 +10,7 @@ import { issueEventTickets, revokeOrderTickets } from "@/lib/events"
 import { z } from "zod"
 import { verifyOrderViaStream } from "@/lib/payments/verify-order"
 import { notifyPaidOrder } from "@/lib/payments/payment-notifications"
+import { isDirectEventOrder } from "@/lib/payments/checkout-mode"
 
 async function ensurePaymentReceipt(orderId: string) {
   if (!await notifyPaidOrder(orderId)) throw new Error("تعذر إرسال إيصال الدفع، ستتم إعادة المحاولة")
@@ -97,10 +98,13 @@ async function fulfillOrderCourses(userId: string, orderId: string) {
     }
   }
 
-  const userCarts: Array<{ id: string }> = await db.select({ id: carts.id }).from(carts).where(eq(carts.userId, userId))
-  const cartIds = userCarts.map((c) => c.id)
-  if (cartIds.length > 0) {
-    await db.delete(cartItems).where(inArray(cartItems.cartId, cartIds))
+  const order = await db.query.orders.findFirst({ where: eq(orders.id, orderId), columns: { notes: true } })
+  if (!isDirectEventOrder(order?.notes)) {
+    const userCarts: Array<{ id: string }> = await db.select({ id: carts.id }).from(carts).where(eq(carts.userId, userId))
+    const cartIds = userCarts.map((c) => c.id)
+    if (cartIds.length > 0) {
+      await db.delete(cartItems).where(inArray(cartItems.cartId, cartIds))
+    }
   }
 
   await ensurePaymentReceipt(orderId)

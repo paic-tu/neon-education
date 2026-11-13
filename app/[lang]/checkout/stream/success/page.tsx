@@ -13,6 +13,7 @@ import { issueEventTickets } from "@/lib/events"
 import { BuyerEventTickets } from "@/components/buyer-event-tickets"
 import { z } from "zod"
 import { notifyPaidOrder } from "@/lib/payments/payment-notifications"
+import { isDirectEventOrder } from "@/lib/payments/checkout-mode"
 
 export default async function StreamCheckoutSuccessPage(props: {
   params: Promise<{ lang: string }>
@@ -49,7 +50,7 @@ export default async function StreamCheckoutSuccessPage(props: {
 
   const order = await db.query.orders.findFirst({
     where: and(eq(orders.id, orderId), eq(orders.userId, user.id)),
-    columns: { id: true, status: true, totalAmount: true, paymentLinkId: true, invoiceId: true, paymentId: true },
+    columns: { id: true, status: true, totalAmount: true, paymentLinkId: true, invoiceId: true, paymentId: true, notes: true },
   })
 
   let resolvedStatus = order?.status || "pending"
@@ -108,11 +109,17 @@ export default async function StreamCheckoutSuccessPage(props: {
           where: eq(carts.userId, user.id),
           columns: { id: true },
         })
-        if (cart?.id) {
+        if (cart?.id && !isDirectEventOrder(order.notes)) {
           await db.delete(cartItems).where(eq(cartItems.cartId, cart.id))
         }
 
         resolvedStatus = "paid"
+      } else {
+        const latest = await db.query.orders.findFirst({
+          where: and(eq(orders.id, order.id), eq(orders.userId, user.id)),
+          columns: { status: true },
+        })
+        resolvedStatus = latest?.status || order.status
       }
     } else {
       resolvedStatus = order.status

@@ -7,7 +7,8 @@ import {
   orders, 
   orderItems, 
   enrollments,
-  users
+  users,
+  products,
 } from "@/lib/db/schema"
 import { auth } from "@/lib/auth"
 import { and, desc, eq, isNotNull } from "drizzle-orm"
@@ -18,6 +19,8 @@ import { getTicketSigningKey } from "@/lib/event-ticket-code"
 import { issueEventTickets } from "@/lib/events"
 import { randomUUID } from "node:crypto"
 import { notifyPaidOrder } from "@/lib/payments/payment-notifications"
+import { DIRECT_EVENT_ORDER_NOTE, isDirectEventOrder } from "@/lib/payments/checkout-mode"
+import { z } from "zod"
 
 function normalizeCouponIds(input: unknown) {
   if (!input) return []
@@ -290,7 +293,7 @@ export async function validateCouponAction(code: string) {
   }
 }
 
-export async function checkoutAction(shippingAddress?: string, notes?: string, lang: string = "ar", couponIds?: string[] | null) {
+export async function checkoutAction(shippingAddress?: string, notes?: string, lang: string = "ar", couponIds?: string[] | null, directEventId?: string) {
     console.log("[Action] checkoutAction started")
     try {
         const session = await auth()
@@ -307,7 +310,14 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
         if (!user) return { error: "User not found" }
 
         // Get cart with items and prices
-        const cart = await db.query.carts.findFirst({
+        if (directEventId && !z.string().uuid().safeParse(directEventId).success) return { error: "Invalid event" }
+        const directProduct = directEventId ? await db.query.products.findFirst({
+          where: eq(products.id, directEventId),
+        }) : null
+        if (directEventId && (!directProduct || !directProduct.isActive || directProduct.productType !== "event_ticket")) {
+          return { error: lang === "ar" ? "الفعالية غير متاحة" : "Event is unavailable" }
+        }
+        const existingCart = directEventId ? null : await db.query.carts.findFirst({
             where: eq(carts.userId, userId),
             with: {
                 items: {
@@ -318,6 +328,9 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
                 }
             }
         })
+        const cart = directProduct
+          ? { id: "", items: [{ course: null, product: directProduct, courseId: null, productId: directProduct.id, quantity: 1 }] }
+          : existingCart
 
         if (!cart || cart.items.length === 0) {
             console.log("[Action] Checkout failed: Cart is empty")
@@ -447,12 +460,14 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
             totalAmount: true,
             couponIds: true,
             gatewayPayload: true,
+            notes: true,
             originalAmount: true,
             discountAmount: true,
           },
         })
 
         if (streamConsumerId === user.streamConsumerId && existingOrder?.paymentLinkUrl
+          && isDirectEventOrder(existingOrder.notes) === Boolean(directEventId)
           && Array.isArray(existingOrder.items) && existingOrder.items.length > 0) {
           const cartKey = cart.items
             .map((it) => `${it.courseId || it.productId}:${it.quantity || 1}`)
@@ -589,7 +604,7 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
                 discountAmount: "0",
                 couponIds: verifiedCouponIds.length > 0 ? verifiedCouponIds : null,
                 shippingAddress: shippingAddress || null,
-                notes: notes || null,
+                notes: directEventId ? DIRECT_EVENT_ORDER_NOTE : (isDirectEventOrder(notes) ? null : notes || null),
                 paymentProvider: "stream",
                 gatewayStatus: "CREATED",
         }
@@ -679,7 +694,7 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
             }
           }
 
-          await db.delete(cartItems).where(eq(cartItems.cartId, cart.id))
+          if (!directEventId) await db.delete(cartItems).where(eq(cartItems.cartId, cart.id))
           await issueEventTickets(order.id)
           await notifyPaidOrder(order.id)
           revalidatePath("/cart")

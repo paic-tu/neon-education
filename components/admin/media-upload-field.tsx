@@ -21,6 +21,7 @@ interface MediaUploadFieldProps {
   isAr?: boolean
   type?: "image" | "video"
   disabled?: boolean
+  onUploadingChange?: (uploading: boolean) => void
 }
 
 export function MediaUploadField({
@@ -34,7 +35,8 @@ export function MediaUploadField({
   helperText,
   isAr = false,
   type = "image",
-  disabled
+  disabled,
+  onUploadingChange,
 }: MediaUploadFieldProps) {
   const { toast } = useToast()
   const [internalValue, setInternalValue] = useState(defaultValue)
@@ -89,6 +91,7 @@ export function MediaUploadField({
       }
 
       setIsUploading(true)
+      onUploadingChange?.(true)
       try {
         const isVideoFile = file.type.startsWith("video/")
         const tryChunkedUpload = async (chunkMb?: number) => {
@@ -280,6 +283,7 @@ export function MediaUploadField({
         })
       } finally {
         setIsUploading(false)
+        onUploadingChange?.(false)
         // Reset file input
         if (fileInputRef.current) {
             fileInputRef.current.value = ""
@@ -368,7 +372,7 @@ export function MediaUploadField({
             size="icon"
             className="absolute top-2 right-2 h-6 w-6 rounded-full opacity-70 hover:opacity-100"
             onClick={() => handleValueChange("")}
-            disabled={disabled}
+            disabled={disabled || isUploading}
           >
             <X className="h-3 w-3" />
           </Button>

@@ -10,10 +10,10 @@ import { useLanguage } from "@/lib/language-context"
 import { useAuth } from "@/lib/auth-context"
 import { t } from "@/lib/i18n"
 import { getAllStoreItems } from "@/lib/db/queries"
-import { ShoppingCart, Package, Ticket, MapPin } from "lucide-react"
+import { ShoppingCart, Package, Ticket, MapPin, CreditCard, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import Image from "next/image"
-import { addToCartAction } from "@/lib/actions/cart"
+import { addToCartAction, checkoutAction } from "@/lib/actions/cart"
 
 type CatalogItem = Awaited<ReturnType<typeof getAllStoreItems>>[number]
 
@@ -24,6 +24,7 @@ export function ProductCatalog({ catalog }: { catalog: "store" | "events" }) {
   const { toast } = useToast()
   const [items, setItems] = useState<CatalogItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [checkingOut, setCheckingOut] = useState<string | null>(null)
   const isEvents = catalog === "events"
   const isAr = language === "ar"
   const EmptyIcon = isEvents ? Ticket : Package
@@ -65,6 +66,35 @@ export function ProductCatalog({ catalog }: { catalog: "store" | "events" }) {
         description: isAr ? "تعذرت الإضافة للسلة" : "Failed to add to cart",
         variant: "destructive",
       })
+    }
+  }
+
+  const handleEventCheckout = async (itemId: string) => {
+    if (!user) {
+      router.push(`/${language}/auth/login?callbackUrl=${encodeURIComponent(`/${language}/events`)}`)
+      return
+    }
+    if (checkingOut) return
+    setCheckingOut(itemId)
+    try {
+      const result = await checkoutAction(undefined, undefined, language, null, itemId)
+      if (result.error) throw new Error(result.error)
+      if (result.checkoutUrl) {
+        window.location.href = result.checkoutUrl
+        return
+      }
+      if (result.orderId) {
+        router.push(`/${language}/tickets/${result.orderId}`)
+        return
+      }
+      throw new Error(isAr ? "تعذر تجهيز رابط الدفع" : "Unable to prepare checkout")
+    } catch (error) {
+      toast({
+        title: isAr ? "خطأ" : "Error",
+        description: error instanceof Error ? error.message : (isAr ? "تعذر تجهيز الدفع" : "Unable to prepare checkout"),
+        variant: "destructive",
+      })
+      setCheckingOut(null)
     }
   }
 
@@ -133,9 +163,9 @@ export function ProductCatalog({ catalog }: { catalog: "store" | "events" }) {
                     )}
                   </CardContent>
                   <CardFooter>
-                    <Button className="w-full" onClick={() => handleAddToCart(item.id)} disabled={available === 0 || ended}>
-                      <ShoppingCart className="h-4 w-4" />
-                      {ended ? (isAr ? "انتهت الفعالية" : "Event ended") : available === 0 ? (isAr ? "نفذ المخزون" : "Out of stock") : t("addToCart", language)}
+                    <Button className="w-full" onClick={() => isTicket ? handleEventCheckout(item.id) : handleAddToCart(item.id)} disabled={available === 0 || ended || (isTicket && checkingOut !== null)}>
+                      {checkingOut === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : isTicket ? <CreditCard className="h-4 w-4" /> : <ShoppingCart className="h-4 w-4" />}
+                      {ended ? (isAr ? "انتهت الفعالية" : "Event ended") : available === 0 ? (isAr ? "نفذ المخزون" : "Out of stock") : checkingOut === item.id ? (isAr ? "جاري تجهيز الدفع..." : "Preparing checkout...") : isTicket ? (isAr ? "ادفع الآن" : "Pay now") : t("addToCart", language)}
                     </Button>
                   </CardFooter>
                 </Card>
