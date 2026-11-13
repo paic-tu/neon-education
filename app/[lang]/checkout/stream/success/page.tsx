@@ -53,10 +53,12 @@ export default async function StreamCheckoutSuccessPage(props: {
   })
 
   let resolvedStatus = order?.status || "pending"
-  const hasEventItems = order ? await db.query.orderItems.findFirst({
-    where: and(eq(orderItems.orderId, order.id), eq(orderItems.isEventTicket, true)),
-    columns: { id: true },
-  }) : null
+  const purchasedItems = order ? await db.query.orderItems.findMany({
+    where: eq(orderItems.orderId, order.id),
+    columns: { isEventTicket: true, courseId: true },
+  }) : []
+  const hasEventItems = purchasedItems.some((item) => item.isEventTicket)
+  const hasCourseItems = purchasedItems.some((item) => Boolean(item.courseId))
 
   if (order && order.status === "pending") {
     let proof: Awaited<ReturnType<typeof verifyOrderViaStream>> = null
@@ -117,7 +119,11 @@ export default async function StreamCheckoutSuccessPage(props: {
     }
   }
 
-  if (order && resolvedStatus === "paid" && hasEventItems) await issueEventTickets(order.id)
+  if (order && resolvedStatus === "paid" && hasEventItems) {
+    await issueEventTickets(order.id)
+    // صفحة التذكرة ترسل الإيصال في الخلفية حتى لا يتأخر ظهور الباركود.
+    redirect(`/${lang}/tickets/${order.id}`)
+  }
   if (order && resolvedStatus === "paid") await notifyPaidOrder(order.id)
 
   return (
@@ -139,9 +145,17 @@ export default async function StreamCheckoutSuccessPage(props: {
           <CardContent className="space-y-4" dir={lang === "ar" ? "rtl" : "ltr"}>
             <div className="text-muted-foreground">
               {resolvedStatus === "paid"
-                ? lang === "ar"
-                  ? "تم استلام عملية الدفع. تم تفعيل مشترياتك."
-                  : "Payment received. Your purchases are now activated."
+                ? hasEventItems
+                  ? lang === "ar"
+                    ? "تم تأكيد حجز الفعالية. تذاكرك والباركود جاهزة، ويمكنك عرضها أدناه أو من صفحة التذاكر."
+                    : "Your event booking is confirmed. Your tickets and barcodes are ready below or on the tickets page."
+                  : hasCourseItems
+                    ? lang === "ar"
+                      ? "تم استلام عملية الدفع. تم تفعيل دوراتك."
+                      : "Payment received. Your courses are now activated."
+                    : lang === "ar"
+                      ? "تم استلام عملية الدفع وتأكيد طلبك. يمكنك متابعة التفاصيل من صفحة طلباتي."
+                      : "Payment received and your order is confirmed. View the details in My Orders."
                 : lang === "ar"
                   ? "تم استلام نتيجة الدفع، لكن لم تصلنا إشارة التأكيد بعد. أعد تحميل الصفحة بعد لحظات."
                   : "We received the redirect, but confirmation hasn't arrived yet. Refresh in a moment."}
@@ -152,16 +166,19 @@ export default async function StreamCheckoutSuccessPage(props: {
               </div>
             )}
             <div className="flex flex-wrap gap-3">
-              <Button asChild>
+              {hasEventItems && order && resolvedStatus === "paid" && <Button asChild>
+                <Link href={`/${lang}/tickets/${order.id}`}>{lang === "ar" ? "عرض تذاكري والباركود" : "View My Tickets & Barcodes"}</Link>
+              </Button>}
+              {hasCourseItems && <Button asChild>
                 <Link href={`/${lang}/student/my-courses`}>{lang === "ar" ? "دوراتي" : "My Courses"}</Link>
-              </Button>
+              </Button>}
               <Button variant="outline" asChild>
                 <Link href={`/${lang}/orders`}>{lang === "ar" ? "طلباتي وتذاكري" : "My Orders & Tickets"}</Link>
               </Button>
             </div>
           </CardContent>
         </Card>
-        {resolvedStatus === "paid" && hasEventItems && <div className="mt-6"><BuyerEventTickets lang={lang} /></div>}
+        {resolvedStatus === "paid" && hasEventItems && order && <div className="mt-6"><BuyerEventTickets lang={lang} orderId={order.id} /></div>}
       </main>
       <SiteFooter />
     </div>

@@ -29,6 +29,7 @@ interface CartItem {
     nameAr: string
     price: string
     imageUrl: string | null
+    productType?: string
   } | null
   quantity: number
 }
@@ -56,6 +57,8 @@ export function CartClient({ initialCart }: CartClientProps) {
   } | null>(null)
   
   const items = initialCart?.items || []
+  const hasEventTickets = items.some((item) => item.product?.productType === "event_ticket")
+  const hasCourses = items.some((item) => Boolean(item.course))
   const itemsCount = items.reduce((acc, it) => acc + (Number(it.quantity) || 0), 0)
   
   const subtotal = items.reduce((acc, item) => {
@@ -116,10 +119,16 @@ export function CartClient({ initialCart }: CartClientProps) {
 
         toast({
           title: isAr ? "تم الطلب بنجاح" : "Order Placed",
-          description: isAr ? "تم إنشاء طلبك وتفعيل الدورات" : "Your order has been placed and courses activated",
+          description: hasEventTickets
+            ? (isAr ? "تم تأكيد حجز الفعالية. يمكنك عرض تذاكرك والباركود من صفحة التذاكر." : "Your event booking is confirmed. View your tickets and barcodes on the tickets page.")
+            : hasCourses
+              ? (isAr ? "تم إنشاء طلبك وتفعيل الدورات" : "Your order has been placed and courses activated")
+              : (isAr ? "تم إنشاء طلبك. يمكنك مراجعة التفاصيل في طلباتي." : "Your order has been placed. View the details in My Orders."),
         })
         router.refresh()
-        router.push(`/${language}/student/dashboard`)
+        router.push(hasEventTickets && result.orderId
+          ? `/${language}/tickets/${result.orderId}`
+          : hasCourses ? `/${language}/student/dashboard` : `/${language}/orders`)
       } else {
         toast({
           variant: "destructive",
@@ -358,7 +367,11 @@ export function CartClient({ initialCart }: CartClientProps) {
                   </div>
                   <div className="flex items-center gap-2">
                     <Truck className="h-4 w-4 text-primary" />
-                    <div>{isAr ? "تفعيل فوري للدورات بعد الدفع" : "Instant course activation after payment"}</div>
+                    <div>{hasEventTickets
+                      ? (isAr ? "تذاكر الفعالية والباركود متاحة بعد تأكيد الدفع" : "Event tickets and barcodes are available after payment confirmation")
+                      : hasCourses
+                        ? (isAr ? "تفعيل فوري للدورات بعد الدفع" : "Instant course activation after payment")
+                        : (isAr ? "متابعة طلبك بعد تأكيد الدفع" : "Track your order after payment confirmation")}</div>
                   </div>
                 </CardContent>
               </Card>
