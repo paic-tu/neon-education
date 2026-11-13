@@ -84,6 +84,13 @@ export function ProductCatalog({ catalog }: { catalog: "store" | "events" }) {
         return
       }
       if (result.orderId) {
+        if (result.receiptSent === false) {
+          toast({
+            variant: "destructive",
+            title: isAr ? "تعذر إرسال الإيصال" : "Receipt could not be sent",
+            description: isAr ? "تم تأكيد الحجز. يمكنك عرض التذكرة، وستُعاد محاولة إرسال الإيصال عند فتحها." : "Your booking is confirmed. View your ticket to retry sending the receipt.",
+          })
+        }
         router.push(`/${language}/tickets/${result.orderId}`)
         return
       }
@@ -165,7 +172,7 @@ export function ProductCatalog({ catalog }: { catalog: "store" | "events" }) {
                   <CardFooter>
                     <Button className="w-full" onClick={() => isTicket ? handleEventCheckout(item.id) : handleAddToCart(item.id)} disabled={available === 0 || ended || (isTicket && checkingOut !== null)}>
                       {checkingOut === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : isTicket ? <CreditCard className="h-4 w-4" /> : <ShoppingCart className="h-4 w-4" />}
-                      {ended ? (isAr ? "انتهت الفعالية" : "Event ended") : available === 0 ? (isAr ? "نفذ المخزون" : "Out of stock") : checkingOut === item.id ? (isAr ? "جاري تجهيز الدفع..." : "Preparing checkout...") : isTicket ? (isAr ? "ادفع الآن" : "Pay now") : t("addToCart", language)}
+                      {ended ? (isAr ? "انتهت الفعالية" : "Event ended") : available === 0 ? (isAr ? "نفذ المخزون" : "Out of stock") : checkingOut === item.id ? (isAr ? "جاري تجهيز الدفع..." : "Preparing checkout...") : isTicket ? (isAr ? "احجز الآن" : "Book now") : t("addToCart", language)}
                     </Button>
                   </CardFooter>
                 </Card>

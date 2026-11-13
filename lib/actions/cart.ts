@@ -18,7 +18,7 @@ import { ensureCheckoutConsumer, withConsumerRecovery } from "@/lib/payments/che
 import { getTicketSigningKey } from "@/lib/event-ticket-code"
 import { issueEventTickets } from "@/lib/events"
 import { randomUUID } from "node:crypto"
-import { notifyPaidOrder } from "@/lib/payments/payment-notifications"
+import { notifyCouponOrderWithRetry, notifyPaidOrder } from "@/lib/payments/payment-notifications"
 import { DIRECT_EVENT_ORDER_NOTE, isDirectEventOrder } from "@/lib/payments/checkout-mode"
 import { z } from "zod"
 
@@ -522,13 +522,13 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
               }
 
               await db.delete(cartItems).where(eq(cartItems.cartId, cart.id))
-              await notifyPaidOrder(existingOrder.id)
+              const receiptSent = await notifyCouponOrderWithRetry(existingOrder.id)
               revalidatePath("/cart")
               revalidatePath("/ar/cart")
               revalidatePath("/en/cart")
               revalidatePath("/ar/student/my-courses")
               revalidatePath("/en/student/my-courses")
-              return { success: true, orderId: existingOrder.id }
+              return { success: true, orderId: existingOrder.id, receiptSent }
             }
 
             return { success: true, orderId: existingOrder.id, checkoutUrl: existingOrder.paymentLinkUrl }
@@ -585,13 +585,13 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
           }
 
           await db.delete(cartItems).where(eq(cartItems.cartId, cart.id))
-          await notifyPaidOrder(order.id)
+          const receiptSent = await notifyCouponOrderWithRetry(order.id)
           revalidatePath("/cart")
           revalidatePath("/ar/cart")
           revalidatePath("/en/cart")
           revalidatePath("/ar/student/my-courses")
           revalidatePath("/en/student/my-courses")
-          return { success: true, orderId: order.id }
+          return { success: true, orderId: order.id, receiptSent }
         }
 
         const order = { id: randomUUID() }
@@ -696,13 +696,13 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
 
           if (!directEventId) await db.delete(cartItems).where(eq(cartItems.cartId, cart.id))
           await issueEventTickets(order.id)
-          await notifyPaidOrder(order.id)
+          const receiptSent = await notifyCouponOrderWithRetry(order.id)
           revalidatePath("/cart")
           revalidatePath("/ar/cart")
           revalidatePath("/en/cart")
           revalidatePath("/ar/student/my-courses")
           revalidatePath("/en/student/my-courses")
-          return { success: true, orderId: order.id }
+          return { success: true, orderId: order.id, receiptSent }
         }
 
         revalidatePath("/cart")

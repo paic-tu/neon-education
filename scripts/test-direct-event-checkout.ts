@@ -11,6 +11,10 @@ test("direct event checkout creates an isolated order without reading or clearin
   let linkInput: any
   let cartReads = 0
   let deletes = 0
+  let linkAmount = "1.00"
+  let receiptSent = true
+  let issued = 0
+  let notified = 0
   const db: any = {
     query: {
       users: { findFirst: async () => ({ id: userId, name: "Buyer", email: "buyer@example.test", preferences: {}, streamConsumerId: "consumer" }) },
@@ -30,10 +34,13 @@ test("direct event checkout creates an isolated order without reading or clearin
     "@/lib/payments/stream": {
       getAppBaseUrl: () => "https://neonedu.org",
       normalizeSaudiPhone: (value: string) => value,
-      streamRequest: async () => { throw new Error("unexpected Stream request") },
+      streamRequest: async (path: string) => {
+        if (path.startsWith("/coupons/")) return { id: "coupon", is_active: true, discount_value: "100", is_percentage: true }
+        throw new Error("unexpected Stream request")
+      },
       createStreamPaymentLink: async (input: any) => {
         linkInput = input
-        return { id: "link", url: "https://checkout.example.test", amount: "1.00" }
+        return { id: "link", url: "https://checkout.example.test", amount: linkAmount }
       },
     },
     "@/lib/payments/checkout-consumer": {
@@ -41,8 +48,11 @@ test("direct event checkout creates an isolated order without reading or clearin
       withConsumerRecovery: async (id: string, create: (id: string) => Promise<unknown>) => create(id),
     },
     "@/lib/event-ticket-code": { getTicketSigningKey: () => "test" },
-    "@/lib/events": { issueEventTickets: async () => {} },
-    "@/lib/payments/payment-notifications": { notifyPaidOrder: async () => true },
+    "@/lib/events": { issueEventTickets: async () => { issued++ } },
+    "@/lib/payments/payment-notifications": {
+      notifyPaidOrder: async () => true,
+      notifyCouponOrderWithRetry: async () => { notified++; return receiptSent },
+    },
   }
   const originalLoad = (Module as any)._load
   const originalKey = process.env.STREAM_API_KEY_BASE64
@@ -66,6 +76,15 @@ test("direct event checkout creates an isolated order without reading or clearin
     assert(isDirectEventOrder(savedOrder.notes))
     assert(!isDirectEventOrder(null))
     assert((await checkoutAction(undefined, undefined, "ar", null, "invalid")).error)
+    linkAmount = "0.00"
+    receiptSent = false
+    const discounted = await checkoutAction(undefined, undefined, "ar", ["coupon"], productId)
+    assert.equal(discounted.success, true)
+    assert.equal(discounted.receiptSent, false)
+    assert.equal(issued, 1)
+    assert.equal(notified, 1)
+    assert.equal(cartReads, 0)
+    assert.equal(deletes, 0)
   } finally {
     ;(Module as any)._load = originalLoad
     if (originalKey === undefined) delete process.env.STREAM_API_KEY_BASE64

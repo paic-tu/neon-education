@@ -23,6 +23,7 @@ export async function retryBuyerPaymentReceipts(userId: string, connection: Conn
 export async function notifyPaidOrder(orderId: string, connection: Connection = db, send: MailSender = sendMail) {
   const claimId = randomUUID()
   let claimed = false
+  let phase = "claim"
   try {
     // الحجز مشترك بين السيرفرات، ويمنع الإرسال المتزامن من صفحة العودة وإشعار الدفع.
     const claim = rows(await connection.execute(sql`
@@ -43,6 +44,7 @@ export async function notifyPaidOrder(orderId: string, connection: Connection = 
       return !state || state.status !== "paid" || Boolean(state.sent_at)
     }
     claimed = true
+    phase = "load_order"
     const [order] = rows(await connection.execute(sql`
       SELECT o.id, o.total_amount AS "totalAmount", o.paid_at AS "paidAt", o.payment_provider AS "paymentProvider",
         u.name, u.email, (SELECT count(*)::int FROM event_tickets t
@@ -51,29 +53,38 @@ export async function notifyPaidOrder(orderId: string, connection: Connection = 
       WHERE o.id = ${orderId}::uuid AND o.status = 'paid' AND o.paid_at IS NOT NULL
     `))
     if (!order?.email) throw new Error("لا يوجد مستلم صالح لإيصال الدفع")
+    phase = "load_items"
     const items = rows(await connection.execute(sql`
       SELECT COALESCE(p.name_ar, c.title_ar, p.name_en, c.title_en, 'طلب نيون') AS name,
         i.quantity, i.price, i.is_event_ticket AS "isEventTicket"
       FROM order_items i LEFT JOIN products p ON p.id = i.product_id
       LEFT JOIN courses c ON c.id = i.course_id WHERE i.order_id = ${orderId}::uuid
     `))
+    phase = "render"
     const receipt = await buildPaymentReceipt({ ...order, items })
+    phase = "send"
     const delivered = await send({
       to: order.email, subject: receipt.subject, html: receipt.html, text: receipt.text,
       idempotencyKey: `neon-paid-order/${orderId}`,
     })
     if (!delivered.success) throw new Error("تعذر إرسال إيصال الدفع")
+    phase = "record"
     await connection.execute(sql`
       UPDATE payment_email_notifications SET sent_at = NOW(), message_id = ${delivered.messageId || null}
       WHERE order_id = ${orderId}::uuid AND claim_id = ${claimId}::uuid
     `)
     return true
-  } catch {
+  } catch (error) {
     if (claimed) await connection.execute(sql`
       UPDATE payment_email_notifications SET claimed_at = NULL, claim_id = NULL
       WHERE order_id = ${orderId}::uuid AND claim_id = ${claimId}::uuid AND sent_at IS NULL
     `).catch(() => {})
-    console.error("تعذر إرسال إيصال الدفع للطلب", orderId)
+    console.error("تعذر إرسال إيصال الدفع للطلب", { orderId, phase, errorName: error instanceof Error ? error.name : "Unknown" })
     return false
   }
+}
+
+export async function notifyCouponOrderWithRetry(orderId: string, connection: Connection = db, send: MailSender = sendMail) {
+  if (await notifyPaidOrder(orderId, connection, send)) return true
+  return notifyPaidOrder(orderId, connection, send)
 }

@@ -125,6 +125,13 @@ export function CartClient({ initialCart }: CartClientProps) {
               ? (isAr ? "تم إنشاء طلبك وتفعيل الدورات" : "Your order has been placed and courses activated")
               : (isAr ? "تم إنشاء طلبك. يمكنك مراجعة التفاصيل في طلباتي." : "Your order has been placed. View the details in My Orders."),
         })
+        if (result.receiptSent === false) {
+          toast({
+            variant: "destructive",
+            title: isAr ? "تعذر إرسال الإيصال" : "Receipt could not be sent",
+            description: isAr ? "تم تأكيد طلبك. افتح طلباتي لعرض التفاصيل وإعادة محاولة إرسال الإيصال." : "Your order is confirmed. Open My Orders to view the details and retry the receipt.",
+          })
+        }
         router.refresh()
         router.push(hasEventTickets && result.orderId
           ? `/${language}/tickets/${result.orderId}`

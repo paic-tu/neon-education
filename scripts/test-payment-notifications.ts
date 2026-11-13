@@ -49,7 +49,7 @@ test("قالب الاشتراك الأصلي يبقى كما هو عند عدم 
 test("حجز البريد في قاعدة البيانات والتكرار وإعادة المحاولة", async (t) => {
   // عنوان غير مستخدم يمنع فتح قاعدة محلية؛ جميع الاستعلامات تمر عبر قاعدة الاختبار المحقونة.
   process.env.DATABASE_URL ||= "postgresql://unused@localhost/unused"
-  const { notifyPaidOrder, retryBuyerPaymentReceipts } = await import("../lib/payments/payment-notifications")
+  const { notifyPaidOrder, notifyCouponOrderWithRetry, retryBuyerPaymentReceipts } = await import("../lib/payments/payment-notifications")
   const pg = new PGlite()
   const connection = drizzle(pg)
   try {
@@ -87,6 +87,37 @@ test("حجز البريد في قاعدة البيانات والتكرار وإ
       assert.equal(await notifyPaidOrder(id, connection, async () => ({ success: true })), true)
       const row = await pg.query<{ sent_at: string }>("SELECT sent_at FROM payment_email_notifications WHERE order_id=$1", [id])
       assert(row.rows[0].sent_at)
+    })
+    await t.test("إيصال تذكرة خصم كامل يعاد إرساله عند الفشل المؤقت دون تكرار", async () => {
+      const id = await fixture()
+      const productId = randomUUID(), itemId = randomUUID()
+      await pg.query("UPDATE orders SET total_amount=0,payment_provider='coupon' WHERE id=$1", [id])
+      await pg.query("INSERT INTO products VALUES ($1,'فعالية','Event')", [productId])
+      await pg.query("INSERT INTO order_items VALUES ($1,$2,$3,NULL,1,1.00,true)", [itemId, id, productId])
+      await pg.query("INSERT INTO event_tickets VALUES ($1,$2,NULL)", [randomUUID(), itemId])
+      let attempts = 0
+      const send = async (message: any) => {
+        attempts++
+        assert.equal(message.idempotencyKey, `neon-paid-order/${id}`)
+        assert(message.text.includes(`/ar/tickets/${id}`))
+        assert(message.text.includes("قسيمة"))
+        assert(message.text.includes("0.00"))
+        return attempts === 1 ? { success: false } : { success: true, messageId: "coupon-receipt" }
+      }
+      assert(await notifyCouponOrderWithRetry(id, connection, send))
+      assert(await notifyCouponOrderWithRetry(id, connection, send))
+      assert.equal(attempts, 2)
+      const row = await pg.query<{ sent_at: string; message_id: string }>("SELECT sent_at,message_id FROM payment_email_notifications WHERE order_id=$1", [id])
+      assert(row.rows[0].sent_at)
+      assert.equal(row.rows[0].message_id, "coupon-receipt")
+    })
+    await t.test("فشل محاولتي إرسال إيصال الخصم يظهر للمشتري ويمكن استعادته", async () => {
+      const id = await fixture()
+      await pg.query("UPDATE orders SET total_amount=0,payment_provider='coupon' WHERE id=$1", [id])
+      let attempts = 0
+      assert.equal(await notifyCouponOrderWithRetry(id, connection, async () => { attempts++; return { success: false } }), false)
+      assert.equal(attempts, 2)
+      assert(await notifyPaidOrder(id, connection, async () => ({ success: true })))
     })
     await t.test("الطلبات غير المدفوعة والملغاة لا ترسل إيصالاً", async () => {
       for (const status of ["pending", "cancelled"]) {
