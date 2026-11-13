@@ -12,6 +12,7 @@ import { verifyOrderViaStream } from "@/lib/payments/verify-order"
 import { issueEventTickets } from "@/lib/events"
 import { BuyerEventTickets } from "@/components/buyer-event-tickets"
 import { z } from "zod"
+import { notifyPaidOrder } from "@/lib/payments/payment-notifications"
 
 export default async function StreamCheckoutSuccessPage(props: {
   params: Promise<{ lang: string }>
@@ -117,6 +118,7 @@ export default async function StreamCheckoutSuccessPage(props: {
   }
 
   if (order && resolvedStatus === "paid" && hasEventItems) await issueEventTickets(order.id)
+  if (order && resolvedStatus === "paid") await notifyPaidOrder(order.id)
 
   return (
     <div className="min-h-screen bg-background flex flex-col">

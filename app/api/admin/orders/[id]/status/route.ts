@@ -6,6 +6,7 @@ import { cartItems, carts, enrollments, orders, orderItems } from "@/lib/db/sche
 import { and, eq, inArray } from "drizzle-orm"
 import { logAudit, type AuditResource } from "@/lib/audit/audit-logger"
 import { revokeOrderTickets, requireSameOrigin } from "@/lib/events"
+import { notifyPaidOrder } from "@/lib/payments/payment-notifications"
 
 const updateStatusSchema = z.object({
   status: z.enum(["pending", "paid", "shipped", "delivered", "cancelled"]),
@@ -92,6 +93,7 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
       .returning()
 
     if (eventItem && status === "cancelled") await revokeOrderTickets(orderId)
+    if (status === "paid") await notifyPaidOrder(orderId)
 
     // Log audit
     await logAudit({

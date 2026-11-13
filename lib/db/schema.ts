@@ -369,6 +369,14 @@ export const orders = pgTable("orders", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 })
 
+export const paymentEmailNotifications = pgTable("payment_email_notifications", {
+  orderId: uuid("order_id").primaryKey().references(() => orders.id, { onDelete: "cascade" }),
+  claimId: uuid("claim_id"),
+  claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  messageId: varchar("message_id", { length: 255 }),
+})
+
 // Order Items table
 export const orderItems = pgTable("order_items", {
   id: uuid("id").defaultRandom().primaryKey(),

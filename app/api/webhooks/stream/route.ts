@@ -5,10 +5,15 @@ import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm"
 import { streamRequest, verifyStreamWebhookSignature } from "@/lib/payments/stream"
 import { sendMail } from "@/lib/mail"
 import { getSiteSettings } from "@/lib/db/queries"
-import { renderSubscriptionSuccessEmail, renderPaymentFailedEmail } from "@/lib/emails"
+import { renderPaymentFailedEmail } from "@/lib/emails"
 import { issueEventTickets, revokeOrderTickets } from "@/lib/events"
 import { z } from "zod"
 import { verifyOrderViaStream } from "@/lib/payments/verify-order"
+import { notifyPaidOrder } from "@/lib/payments/payment-notifications"
+
+async function ensurePaymentReceipt(orderId: string) {
+  if (!await notifyPaidOrder(orderId)) throw new Error("تعذر إرسال إيصال الدفع، ستتم إعادة المحاولة")
+}
 
 async function processApiVerifiedWebhook(req: Request) {
   const raw = await req.text()
@@ -49,8 +54,10 @@ async function processApiVerifiedWebhook(req: Request) {
         paymentId: proof.paymentId, gatewayStatus: "PAID", gatewayPayload: proof, updatedAt: new Date(),
       }).where(and(eq(orders.id, order.id), ne(orders.status, "cancelled"))).returning({ id: orders.id })
       if (updated.length) {
-        if (order.status === "paid") await issueEventTickets(order.id)
-        else await fulfillOrderCourses(order.userId, order.id)
+        if (order.status === "paid") {
+          await issueEventTickets(order.id)
+          await ensurePaymentReceipt(order.id)
+        } else await fulfillOrderCourses(order.userId, order.id)
       }
     }
     return NextResponse.json({ success: true })
@@ -96,27 +103,7 @@ async function fulfillOrderCourses(userId: string, orderId: string) {
     await db.delete(cartItems).where(inArray(cartItems.cartId, cartIds))
   }
 
-  if (!courseIds.length) return
-
-  // Send enrollment email
-  try {
-    const user = await db.query.users.findFirst({ where: eq(users.id, userId) })
-    if (user?.email) {
-      const settings = await getSiteSettings()
-      const { html, text } = await renderSubscriptionSuccessEmail({
-        language: "ar",
-        dashboardUrl: `${process.env.NEXT_PUBLIC_APP_URL}/ar/portal/dashboard`,
-      })
-      await sendMail({
-        to: user.email,
-        subject: `تم الاشتراك بنجاح - ${settings.siteName}`,
-        html,
-        text,
-      })
-    }
-  } catch (error) {
-    console.error("Error sending enrollment email:", error)
-  }
+  await ensurePaymentReceipt(orderId)
 }
 
 async function notifyPaymentFailed(userId: string) {
@@ -353,6 +340,7 @@ export async function POST(req: Request) {
 
   if (order.status === "paid") {
     await issueEventTickets(order.id)
+    await ensurePaymentReceipt(order.id)
     return NextResponse.json({ success: true })
   }
 

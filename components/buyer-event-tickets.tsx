@@ -20,7 +20,7 @@ interface BuyerTicket {
   qr: string | null
 }
 
-export function BuyerEventTickets({ lang }: { lang: string }) {
+export function BuyerEventTickets({ lang, orderId }: { lang: string; orderId?: string }) {
   const isAr = lang === "ar"
   const [tickets, setTickets] = useState<BuyerTicket[]>([])
   const [loading, setLoading] = useState(true)
@@ -31,7 +31,10 @@ export function BuyerEventTickets({ lang }: { lang: string }) {
   useEffect(() => {
     const controller = new AbortController()
     setLoading(true)
-    fetch(`/api/tickets${pageCursor ? `?cursor=${encodeURIComponent(pageCursor)}` : ""}`, { cache: "no-store", signal: controller.signal })
+    const query = new URLSearchParams()
+    if (pageCursor) query.set("cursor", pageCursor)
+    if (orderId) query.set("orderId", orderId)
+    fetch(`/api/tickets?${query.toString()}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error("Failed")
         const data = await response.json()
@@ -42,7 +45,7 @@ export function BuyerEventTickets({ lang }: { lang: string }) {
       .catch((e) => { if (e.name !== "AbortError") setError(true) })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [refresh, pageCursor])
+  }, [refresh, pageCursor, orderId])
 
   return (
     <section className="mb-8 space-y-4" aria-label={isAr ? "تذاكر الفعاليات" : "Event tickets"}>

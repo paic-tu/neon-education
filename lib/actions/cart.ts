@@ -16,6 +16,7 @@ import { createStreamConsumer, createStreamPaymentLink, findStreamConsumerByEmai
 import { getTicketSigningKey } from "@/lib/event-ticket-code"
 import { issueEventTickets } from "@/lib/events"
 import { randomUUID } from "node:crypto"
+import { notifyPaidOrder } from "@/lib/payments/payment-notifications"
 
 function normalizeCouponIds(input: unknown) {
   if (!input) return []
@@ -396,6 +397,7 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
 
             await db.delete(cartItems).where(eq(cartItems.cartId, cart.id))
 
+            await notifyPaidOrder(order.id)
             revalidatePath("/cart")
             revalidatePath("/student/dashboard")
             revalidatePath("/ar/student/dashboard")
@@ -527,6 +529,7 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
               }
 
               await db.delete(cartItems).where(eq(cartItems.cartId, cart.id))
+              await notifyPaidOrder(existingOrder.id)
               revalidatePath("/cart")
               revalidatePath("/ar/cart")
               revalidatePath("/en/cart")
@@ -589,6 +592,7 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
           }
 
           await db.delete(cartItems).where(eq(cartItems.cartId, cart.id))
+          await notifyPaidOrder(order.id)
           revalidatePath("/cart")
           revalidatePath("/ar/cart")
           revalidatePath("/en/cart")
@@ -698,6 +702,7 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
 
           await db.delete(cartItems).where(eq(cartItems.cartId, cart.id))
           await issueEventTickets(order.id)
+          await notifyPaidOrder(order.id)
           revalidatePath("/cart")
           revalidatePath("/ar/cart")
           revalidatePath("/en/cart")

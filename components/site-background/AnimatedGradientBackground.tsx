@@ -9,26 +9,25 @@ import { startBackgroundAnimation } from "./engine"
 import { DARK_THEME, LIGHT_THEME } from "./themes"
 import styles from "./SiteBackground.module.css"
 
-// Hidden entirely behind the opaque bg-muted portal shells, so skip mounting
-// (and never start the canvas/WebGL animation loops) on those routes.
-const PORTAL_PATH_PATTERN = /^\/[a-z]{2}\/(student|instructor|admin)(\/|$)/
+// الصفحات ذات الخلفية المعتمة لا تحتاج تشغيل طبقات الرسم والحركة خلف محتواها.
+const OPAQUE_PAGE_PATH_PATTERN = /^\/[a-z]{2}\/(student|instructor|admin|orders)(\/|$)/
 
 export function AnimatedGradientBackground() {
   const { theme } = useTheme()
   const pathname = usePathname()
-  const isPortalRoute = PORTAL_PATH_PATTERN.test(pathname || "")
+  const isOpaquePageRoute = OPAQUE_PAGE_PATH_PATTERN.test(pathname || "")
   const galaxyCanvasRef = useRef<HTMLCanvasElement>(null)
 
   // Layer B: the galaxy (stars/nebula/dust/meteors), mounted once per theme
   // change. It sits underneath the gradient veil below.
   useEffect(() => {
-    if (isPortalRoute) return
+    if (isOpaquePageRoute) return
     const canvas = galaxyCanvasRef.current
     if (!canvas) return
     return startBackgroundAnimation(canvas, theme === "dark" ? DARK_THEME : LIGHT_THEME)
-  }, [theme, isPortalRoute])
+  }, [theme, isOpaquePageRoute])
 
-  if (isPortalRoute) return null
+  if (isOpaquePageRoute) return null
 
   return (
     <>

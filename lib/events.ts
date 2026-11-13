@@ -3,8 +3,6 @@ import { db } from "@/lib/db"
 import { users, eventTickets, products, orderItems, orders } from "@/lib/db/schema"
 import { auth } from "@/lib/auth"
 import { admitTicket, issueTickets, revokeTickets, EventError, resultRows } from "@/lib/event-ticket-service"
-import { sendMail } from "@/lib/mail"
-import { getAppBaseUrl } from "@/lib/payments/stream"
 export { EventError, resultRows } from "@/lib/event-ticket-service"
 
 export async function requireEventUser(adminOnly = false) {
@@ -26,21 +24,7 @@ export function requireSameOrigin(req: Request) {
 }
 
 export async function issueEventTickets(orderId: string) {
-  const issued = await issueTickets(db, orderId)
-  if (issued.length) {
-    try {
-      const [owner] = await db.select({ email: users.email }).from(orders)
-        .innerJoin(users, eq(users.id, orders.userId)).where(eq(orders.id, orderId)).limit(1)
-      if (owner) await sendMail({
-        to: owner.email,
-        subject: "تذاكر فعاليتك جاهزة - منصة نيون",
-        text: `تم تأكيد طلبك وإصدار ${issued.length} تذكرة للفعالية. يمكنك عرض رموز الدخول الخاصة بك بعد تسجيل الدخول:\n${getAppBaseUrl()}/ar/orders\nلا تشارك رموز التذاكر؛ كل تذكرة تسمح بدخول شخص واحد مرة واحدة فقط.`,
-      })
-    } catch (error) {
-      console.error("Event ticket notification failed", error instanceof Error ? error.name : "Unknown")
-    }
-  }
-  return issued
+  return issueTickets(db, orderId)
 }
 
 export async function revokeOrderTickets(orderId: string) {
@@ -71,7 +55,7 @@ export async function listEventProducts(userId: string) {
   `))
 }
 
-export async function getBuyerTickets(userId: string, cursor?: string) {
+export async function getBuyerTickets(userId: string, cursor?: string, orderId?: string) {
   return db.select({
     id: eventTickets.id, orderItemId: eventTickets.orderItemId, productId: eventTickets.productId,
     userId: eventTickets.userId, ordinal: eventTickets.ordinal, checkedInAt: eventTickets.checkedInAt,
@@ -84,6 +68,7 @@ export async function getBuyerTickets(userId: string, cursor?: string) {
     .innerJoin(products, eq(products.id, eventTickets.productId))
     .innerJoin(users, eq(users.id, eventTickets.userId))
     .where(and(eq(eventTickets.userId, userId), eq(orders.status, "paid"), eq(users.isActive, true),
+      orderId ? eq(orders.id, orderId) : undefined,
       cursor ? gt(eventTickets.id, cursor) : undefined))
     .orderBy(asc(eventTickets.id)).limit(21)
 }

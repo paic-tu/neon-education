@@ -58,9 +58,9 @@ export default function OrdersPage() {
   if (loading) {
     return (
       <RequireAuth>
-        <div className="min-h-screen bg-background">
+        <div className="relative isolate z-10 min-h-svh bg-muted">
           <NavBar />
-          <main className="container mx-auto px-4 py-8">
+          <main className="container mx-auto px-4 pb-8 pt-28">
             <div className="text-center py-16">
               <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full mx-auto" />
             </div>
@@ -72,7 +72,7 @@ export default function OrdersPage() {
 
   return (
     <RequireAuth>
-      <div className="min-h-screen bg-background">
+      <div className="relative isolate z-10 min-h-svh bg-muted">
         <NavBar />
         <main className="container mx-auto px-4 pb-8 pt-28">
           <h1 className="text-3xl font-bold mb-8">{t("orders", language)}</h1>
@@ -89,13 +89,13 @@ export default function OrdersPage() {
           ) : (
             <div className="space-y-4">
               {orders.map((order) => (
-                <Card key={order.id}>
+                <Card key={order.id} className="border-border bg-card shadow-sm">
                   <CardContent className="pt-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <ShoppingBag className="h-5 w-5 text-muted-foreground" />
-                        <div>
-                          <p className="font-semibold">
+                    <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
+                        <ShoppingBag className="h-5 w-5 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0">
+                          <p className="break-all font-semibold">
                             {language === "ar" ? "طلب رقم" : "Order"} #{order.id}
                           </p>
                           <p className="text-sm text-muted-foreground">
@@ -126,11 +126,11 @@ export default function OrdersPage() {
                         const unitPrice = item.price ? Number(item.price) : item.course ? Number(item.course.price) : item.product ? Number(item.product.price) : 0
                         const qty = Number(item.quantity || 1)
                         return (
-                          <div key={idx} className="flex justify-between text-sm">
-                            <span>
+                          <div key={idx} className="flex justify-between gap-4 text-sm">
+                            <span className="min-w-0 break-words">
                               {name} x{qty}
                             </span>
-                            <span className="font-medium">
+                            <span className="shrink-0 font-medium tabular-nums">
                               {(unitPrice * qty).toFixed(2)} {language === "ar" ? "ر.س" : "SAR"}
                             </span>
                           </div>

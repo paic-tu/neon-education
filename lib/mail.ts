@@ -47,11 +47,13 @@ export async function sendMail({
   subject,
   text,
   html,
+  idempotencyKey,
 }: {
   to: string
   subject: string
   text?: string
   html?: string
+  idempotencyKey?: string
 }) {
   try {
     const settings = await getSiteSettings()
@@ -71,10 +73,11 @@ export async function sendMail({
         subject,
         text: text || "",
         html: finalHtml || "",
-      })
+      }, idempotencyKey ? { idempotencyKey } : undefined)
 
       if (error) {
         console.error("Resend error:", error)
+        if (idempotencyKey) return { success: false, error: "Email provider rejected receipt" }
       } else {
         console.log("Email sent via Resend:", data?.id)
         return { success: true, messageId: data?.id }
