@@ -5,3 +5,9 @@ dist
 .trae
 .log
 .figma
+.local-db
+.screenshots
+.vscode
+scripts/test-*
+scripts/create-test-users.ts
+tsconfig.tsbuildinfo

@@ -13,6 +13,7 @@ import {
   User,
   Settings,
   Headphones,
+  Ticket,
 } from "lucide-react"
 
 export function StudentNav({ isCollapsed }: { isCollapsed?: boolean }) {
@@ -32,6 +33,11 @@ export function StudentNav({ isCollapsed }: { isCollapsed?: boolean }) {
           href: "/student/dashboard",
           label: t("dashboard", locale),
           icon: LayoutDashboard,
+        },
+        {
+          href: "/tickets",
+          label: isAr ? "تذاكري" : "My Tickets",
+          icon: Ticket,
         },
       ],
     },

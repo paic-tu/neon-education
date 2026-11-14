@@ -25,11 +25,13 @@ import {
   MessageSquare,
   ClipboardCheck,
   Headphones,
+  Ticket,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { User } from "@/lib/auth"
-import { hasPermission } from "@/lib/rbac/permissions"
+import { hasPermission, type Permission } from "@/lib/rbac/permissions"
 import { streamPayNavGroups } from "@/lib/admin/stream-pay-nav"
+import { useLiveCourses } from "@/hooks/use-portal-notifications"
 
 interface AdminSidebarProps {
   user: User
@@ -41,63 +43,18 @@ function AdminNav({ user, isCollapsed }: AdminSidebarProps) {
   const segments = pathname.split("/")
   const locale = segments[1] || "ar"
   const isAr = locale === "ar"
-  const [liveCourses, setLiveCourses] = useState<Array<{ id: string; titleEn: string; titleAr: string }>>([])
-  const [loadingLive, setLoadingLive] = useState(false)
+  const liveCourses = useLiveCourses()
   
   // Helper to remove locale from path for comparison
   const pathWithoutLocale = "/" + segments.slice(2).join("/")
   const isStreamPay = pathWithoutLocale === "/admin/stream-pay" || pathWithoutLocale.startsWith("/admin/stream-pay/")
 
-  useEffect(() => {
-    const controller = new AbortController()
-    let timeout: ReturnType<typeof setTimeout> | null = null
-    let stopped = false
-
-    const fetchLive = async (isInitial = false) => {
-      try {
-        if (isInitial) setLoadingLive(true)
-        const res = await fetch("/api/live/courses", { signal: controller.signal })
-        const data = await res.json()
-        const next = (data?.courses || []).slice(0, 10)
-        setLiveCourses(next)
-        return Array.isArray(next) ? next.length : 0
-      } catch {
-        return null
-      } finally {
-        if (isInitial) setLoadingLive(false)
-      }
-    }
-
-    const schedule = async (isInitial = false) => {
-      if (stopped) return
-      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
-        timeout = setTimeout(() => schedule(false), 60_000)
-        return
-      }
-      const count = await fetchLive(isInitial)
-      const nextDelay = typeof count === "number" ? (count > 0 ? 10_000 : 120_000) : 60_000
-      timeout = setTimeout(() => schedule(false), nextDelay)
-    }
-
-    const onVisibility = () => {
-      if (typeof document === "undefined") return
-      if (document.visibilityState === "visible") {
-        if (timeout) clearTimeout(timeout)
-        schedule(false)
-      }
-    }
-
-    schedule(true)
-    document.addEventListener("visibilitychange", onVisibility)
-    return () => {
-      stopped = true
-      controller.abort()
-      if (timeout) clearTimeout(timeout)
-      document.removeEventListener("visibilitychange", onVisibility)
-    }
-  }, [])
-
-  const navGroups = [
+  const navGroups: Array<{
+    id: string
+    titleAr: string
+    titleEn: string
+    items: Array<{ href: string; label: string; icon: typeof LayoutDashboard; permission: Permission | null }>
+  }> = [
     {
       id: "main",
       titleAr: "الرئيسية",
@@ -107,6 +64,12 @@ function AdminNav({ user, isCollapsed }: AdminSidebarProps) {
           href: "/admin",
           label: isAr ? "لوحة التحكم" : "Dashboard",
           icon: LayoutDashboard,
+          permission: null,
+        },
+        {
+          href: "/tickets",
+          label: isAr ? "تذاكري" : "My Tickets",
+          icon: Ticket,
           permission: null,
         },
       ],
@@ -416,11 +379,6 @@ function AdminNav({ user, isCollapsed }: AdminSidebarProps) {
               <div className="px-3 pb-2 text-xs font-semibold text-muted-foreground">
                 {isAr ? "الدورات المباشرة" : "Live Courses"}
               </div>
-              {loadingLive && (
-                <div className="px-3 py-2 text-xs text-muted-foreground">
-                  {isAr ? "جاري التحميل..." : "Loading..."}
-                </div>
-              )}
               {liveCourses.map((c) => {
                 const hrefWithLocale = `/${locale}/student/course/${c.id}/live`
                 const isActive = pathWithoutLocale.startsWith(`/student/course/${c.id}/live`)
@@ -440,7 +398,7 @@ function AdminNav({ user, isCollapsed }: AdminSidebarProps) {
                   </Link>
                 )
               })}
-              {!loadingLive && liveCourses.length === 0 && (
+              {liveCourses.length === 0 && (
                 <div className="px-3 py-2 text-xs text-muted-foreground">
                   {isAr ? "لا توجد دورات مباشرة" : "No live courses"}
                 </div>

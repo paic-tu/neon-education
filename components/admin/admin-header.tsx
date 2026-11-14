@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/sheet"
 
 interface AdminHeaderProps {
-  user: User
+  user: Pick<User, "name" | "role" | "avatarUrl">
   mobileNav?: React.ReactNode
 }
 

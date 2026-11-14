@@ -16,9 +16,7 @@ import {
 import "@livekit/components-styles"
 import { DataPacket_Kind, Room as ClientRoom, RoomEvent, Track } from "livekit-client"
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -47,111 +45,8 @@ import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { uploadFileAction } from "@/lib/actions/upload"
 import { cn } from "@/lib/utils"
-
-interface UserInfo {
-  id: string
-  name: string
-  role: string
-  image?: string
-}
-
-interface LiveSessionConfig {
-  roomName: string
-  user: UserInfo
-  isAr: boolean
-  mode?: "student" | "instructor"
-  href: string
-}
-
-interface LiveSessionApi {
-  config: LiveSessionConfig | null
-  expanded: boolean
-  start: (config: LiveSessionConfig) => void
-  stop: () => void
-  /** Registers the DOM slot on the live page (null when the page unmounts). */
-  setPageTarget: (el: HTMLElement | null) => void
-  /** Collapses to the floating mini player while staying connected. */
-  minimize: () => void
-  /** Brings the room back to full size on the live page. */
-  expand: () => void
-}
-
-const LiveSessionContext = createContext<LiveSessionApi | null>(null)
-
-export function useLiveSession(): LiveSessionApi {
-  const ctx = useContext(LiveSessionContext)
-  if (!ctx) {
-    throw new Error("useLiveSession must be used within a LiveSessionProvider")
-  }
-  return ctx
-}
-
-/**
- * Owns a single LiveKit connection for the whole portal so that navigating
- * between pages never drops the call. The room itself lives in a detached
- * container that is physically moved between the live page (inline) and the
- * document body (floating mini player). Because the container node identity
- * never changes, React never remounts the room and the connection survives.
- */
-export function LiveSessionProvider({ children }: { children: ReactNode }) {
-  const [config, setConfig] = useState<LiveSessionConfig | null>(null)
-  const [pageTarget, setPageTargetState] = useState<HTMLElement | null>(null)
-  const [floating, setFloating] = useState(false)
-
-  const start = useCallback((next: LiveSessionConfig) => {
-    setFloating(false)
-    setConfig((prev) => {
-      if (
-        prev &&
-        prev.roomName === next.roomName &&
-        prev.user.id === next.user.id &&
-        prev.user.name === next.user.name &&
-        prev.user.role === next.user.role &&
-        prev.isAr === next.isAr &&
-        prev.mode === next.mode &&
-        prev.href === next.href
-      ) {
-        return prev
-      }
-      return next
-    })
-  }, [])
-
-  const stop = useCallback(() => {
-    setFloating(false)
-    setPageTargetState(null)
-    setConfig(null)
-  }, [])
-
-  const setPageTarget = useCallback((el: HTMLElement | null) => {
-    // Returning to the live page always restores the full-size view.
-    if (el) setFloating(false)
-    setPageTargetState(el)
-  }, [])
-
-  const minimize = useCallback(() => setFloating(true), [])
-  const expand = useCallback(() => setFloating(false), [])
-
-  const expanded = Boolean(pageTarget) && !floating
-
-  const api = useMemo(
-    () => ({ config, expanded, start, stop, setPageTarget, minimize, expand }),
-    [config, expanded, start, stop, setPageTarget, minimize, expand]
-  )
-
-  return (
-    <LiveSessionContext.Provider value={api}>
-      {children}
-      {config && (
-        <LiveSessionHost
-          config={config}
-          inlineTarget={expanded ? pageTarget : null}
-          onClose={stop}
-        />
-      )}
-    </LiveSessionContext.Provider>
-  )
-}
+import { useLiveSession, type LiveSessionConfig, type UserInfo } from "@/components/live-session-provider"
+export { useLiveSession, LiveSessionProvider } from "@/components/live-session-provider"
 
 function parseAvatarUrl(metadata?: string): string | null {
   if (!metadata) return null
@@ -195,7 +90,7 @@ function getInitials(name?: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
-function LiveSessionHost({
+export function LiveSessionHost({
   config,
   inlineTarget,
   onClose,

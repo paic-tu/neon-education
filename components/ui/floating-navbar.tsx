@@ -6,11 +6,11 @@ import {
   motion,
   useMotionValueEvent,
   useScroll,
+  type HTMLMotionProps,
 } from "framer-motion"
-
 import { cn } from "@/lib/utils"
 
-type FloatingNavbarProps = React.HTMLAttributes<HTMLDivElement> & {
+type FloatingNavbarProps = HTMLMotionProps<"div"> & {
   children: React.ReactNode
 }
 
@@ -27,10 +27,8 @@ export function FloatingNavbar({
     const syncActivationOffset = () => {
       setActivationOffset(window.innerHeight * 0.88)
     }
-
     syncActivationOffset()
     window.addEventListener("resize", syncActivationOffset)
-
     return () => {
       window.removeEventListener("resize", syncActivationOffset)
     }
@@ -38,14 +36,11 @@ export function FloatingNavbar({
 
   useMotionValueEvent(scrollY, "change", (current) => {
     if (typeof current !== "number") return
-
     const previous = scrollY.getPrevious()
-
     if (current < activationOffset) {
       setVisible(true)
       return
     }
-
     setVisible(previous !== undefined && current < previous)
   })
 

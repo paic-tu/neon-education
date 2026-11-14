@@ -21,8 +21,8 @@ import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
 import { useLanguage } from "@/lib/language-context"
 import { useTheme } from "@/lib/theme-context"
-import { useState, useEffect } from "react"
-import { getUnreadMessageCount } from "@/lib/actions/chat"
+import { useState } from "react"
+import { useUnreadMessageCount } from "@/hooks/use-portal-notifications"
 import type React from "react"
 
 interface PortalHeaderProps {
@@ -40,24 +40,8 @@ export function PortalHeader({ user, mobileNav }: PortalHeaderProps) {
   const { logout } = useAuth()
   const { language, setLanguage } = useLanguage()
   const { theme, toggleTheme } = useTheme()
-  const [unreadCount, setUnreadCount] = useState(0)
+  const unreadCount = useUnreadMessageCount()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-
-  useEffect(() => {
-    const fetchCount = async () => {
-      try {
-        const count = await getUnreadMessageCount()
-        setUnreadCount(count)
-      } catch (error) {
-        console.error("Failed to fetch unread count:", error)
-      }
-    }
-
-    fetchCount()
-    // Poll every 10 seconds
-    const interval = setInterval(fetchCount, 10000)
-    return () => clearInterval(interval)
-  }, [])
 
   const handleLogout = async () => {
     await logout()

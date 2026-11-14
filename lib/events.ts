@@ -55,7 +55,7 @@ export async function listEventProducts(userId: string) {
   `))
 }
 
-export async function getBuyerTickets(userId: string, cursor?: string, orderId?: string) {
+export async function getBuyerTickets(userId: string, cursor?: string, orderId?: string, ticketId?: string) {
   return db.select({
     id: eventTickets.id, orderItemId: eventTickets.orderItemId, productId: eventTickets.productId,
     userId: eventTickets.userId, ordinal: eventTickets.ordinal, checkedInAt: eventTickets.checkedInAt,
@@ -69,6 +69,7 @@ export async function getBuyerTickets(userId: string, cursor?: string, orderId?:
     .innerJoin(users, eq(users.id, eventTickets.userId))
     .where(and(eq(eventTickets.userId, userId), eq(orders.status, "paid"), eq(users.isActive, true),
       orderId ? eq(orders.id, orderId) : undefined,
+      ticketId ? eq(eventTickets.id, ticketId) : undefined,
       cursor ? gt(eventTickets.id, cursor) : undefined))
     .orderBy(asc(eventTickets.id)).limit(21)
 }

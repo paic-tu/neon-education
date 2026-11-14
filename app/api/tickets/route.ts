@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { getBuyerTickets } from "@/lib/events"
 import { ticketCode } from "@/lib/event-ticket-code"
 import { z } from "zod"
+import { appleWalletAvailable } from "@/lib/apple-wallet"
 
 export const dynamic = "force-dynamic"
 
@@ -21,12 +22,13 @@ export async function GET(req: Request) {
     const tickets = await getBuyerTickets(user.id, cursor, orderId)
     const page = tickets.slice(0, 20)
     const data = await Promise.all(page.map(async (ticket: any) => {
-      const code = !ticket.revokedAt && !ticket.checkedInAt ? ticketCode(ticket) : null
-      const qr = code ? await QRCode.toDataURL(code, { width: 320, margin: 4, errorCorrectionLevel: "M" }) : null
+      // Keep the buyer's barcode visible after admission; the scanner still rejects reuse.
+      const code = !ticket.revokedAt ? ticketCode(ticket) : null
+      const qr = code ? await QRCode.toDataURL(code, { width: 320, margin: 4, errorCorrectionLevel: "H", maskPattern: 3 }) : null
       const { userId, orderItemId, ...publicTicket } = ticket
       return { ...publicTicket, code, qr }
     }))
-    return NextResponse.json({ tickets: data, nextCursor: tickets.length > 20 ? page[page.length - 1].id : null }, { headers: { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" } })
+    return NextResponse.json({ tickets: data, walletAvailable: appleWalletAvailable(), nextCursor: tickets.length > 20 ? page[page.length - 1].id : null }, { headers: { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" } })
   } catch {
     return NextResponse.json({ error: "SERVER_ERROR" }, { status: 500, headers: { "Cache-Control": "no-store" } })
   }

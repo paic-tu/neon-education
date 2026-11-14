@@ -14,32 +14,25 @@ export function AnimatedCounter({ value, duration = 2000, suffix = "", className
   const [count, setCount] = useState(0)
   const ref = useRef<HTMLDivElement>(null)
   const isInView = useInView(ref, { once: true, margin: "-100px" })
-  const [hasAnimated, setHasAnimated] = useState(false)
 
   useEffect(() => {
-    if (!isInView || hasAnimated) return
-    setHasAnimated(true)
-
-    const startTime = Date.now()
-    const endTime = startTime + duration
-
-    const animate = () => {
-      const now = Date.now()
-      const progress = Math.min((now - startTime) / duration, 1)
-
-      // Easing function for smooth animation
-      const easeOut = 1 - Math.pow(1 - progress, 3)
-      setCount(Math.floor(easeOut * value))
-
-      if (now < endTime) {
-        requestAnimationFrame(animate)
-      } else {
-        setCount(value)
-      }
+    if (!isInView) return
+    if (duration <= 0) {
+      setCount(value)
+      return
     }
-
-    requestAnimationFrame(animate)
-  }, [isInView, value, duration, hasAnimated])
+    const startTime = Date.now()
+    let frame = 0
+    const animate = () => {
+      const progress = Math.min((Date.now() - startTime) / duration, 1)
+      const easeOut = 1 - Math.pow(1 - progress, 3)
+      setCount(progress < 1 ? Math.floor(easeOut * value) : value)
+      if (progress < 1) frame = requestAnimationFrame(animate)
+    }
+    frame = requestAnimationFrame(animate)
+    // Stats arrive asynchronously; restart for the new value without leaking frames.
+    return () => cancelAnimationFrame(frame)
+  }, [isInView, value, duration])
 
   return (
     <div ref={ref} className={className}>

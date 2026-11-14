@@ -1,7 +1,7 @@
 "use client"
 
 import { motion } from "framer-motion"
-import { ReactNode } from "react"
+import type { ReactNode } from "react"
 
 export function Reveal({ children, delay = 0 }: { children: ReactNode; delay?: number }) {
   return (
@@ -15,4 +15,3 @@ export function Reveal({ children, delay = 0 }: { children: ReactNode; delay?: n
     </motion.div>
   )
 }
-

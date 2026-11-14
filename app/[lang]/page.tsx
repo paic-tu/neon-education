@@ -10,10 +10,8 @@ import { HomeFaqAccordion } from "@/components/home-faq-accordion"
 import { BookOpen, Award, Users, Sparkles, Rocket, Zap, Clock, Star, HelpCircle, Linkedin } from "lucide-react"
 import { useLanguage } from "@/lib/language-context"
 import { t } from "@/lib/i18n"
-import { getLandingPageReviews, getLandingPageStats } from "@/lib/actions/stats"
 import { getFaqItems } from "@/lib/content/faq"
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
 import { Reveal } from "@/components/reveal"
 import { RotatingWords } from "@/components/rotating-words"
@@ -27,7 +25,6 @@ export default function HomePage() {
   const { language } = useLanguage()
   const isRTL = language === "ar"
   const { user, isAuthenticated } = useAuth()
-  const router = useRouter()
   const [stats, setStats] = useState({
     courses: 0,
     students: 0,
@@ -49,20 +46,20 @@ export default function HomePage() {
   >([])
 
   useEffect(() => {
-    const fetchReviews = async () => {
+    const controller = new AbortController()
+    const load = async () => {
       try {
-        const data = await getLandingPageReviews()
-        const fiveStarOnly = (data as any[]).filter((r) => Number(r.rating) === 5)
-        setReviews(fiveStarOnly)
+        const response = await fetch("/api/landing", { signal: controller.signal })
+        if (!response.ok) return
+        const data = await response.json()
+        if (controller.signal.aborted) return
+        setStats(data.stats)
+        setReviews(data.reviews)
       } catch {
       }
     }
-
-    getLandingPageStats().then(setStats)
-    fetchReviews()
-
-    const interval = setInterval(fetchReviews, 30000)
-    return () => clearInterval(interval)
+    void load()
+    return () => controller.abort()
   }, [])
 
   return (

@@ -1,59 +1,34 @@
 "use server"
 
-import { getPlatformStats } from "@/lib/db/queries"
 import { db } from "@/lib/db"
-import { courses, reviews, users } from "@/lib/db/schema"
+import { certificates, courses, reviews, users } from "@/lib/db/schema"
 import { and, avg, count, desc, eq, isNotNull, sql } from "drizzle-orm"
 
 export async function getLandingPageStats() {
   try {
-    const stats = await getPlatformStats()
-
-    // Only count courses the admin has approved/published for public visitors —
-    // stats.course_count includes drafts, which is fine for the admin dashboard but not here.
-    const [publishedCoursesResult] = await db
-      .select({ value: count() })
-      .from(courses)
-      .where(eq(courses.isPublished, true))
+    const [[publishedCoursesResult], [studentsResult], [certificatesResult], [ratingResult], [reviewsCountResult]] = await Promise.all([
+      db.select({ value: count() }).from(courses).where(eq(courses.isPublished, true)),
+      db.select({ value: count() }).from(users),
+      db.select({ value: count() }).from(certificates),
+      db.select({ value: avg(reviews.rating) }).from(reviews),
+      db.select({ value: count() }).from(reviews).where(and(
+        eq(reviews.isPublished, true),
+        eq(reviews.rating, 5),
+        isNotNull(reviews.comment),
+        sql`length(${reviews.comment}) > 0`,
+      )),
+    ])
     const publishedCourseCount = publishedCoursesResult?.value || 0
-
-    // Fetch average rating for satisfaction
-    const [ratingResult] = await db
-      .select({ value: avg(reviews.rating) })
-      .from(reviews)
-
-    // Total published 5-star reviews with a comment, matching getLandingPageReviews' filter
-    const [reviewsCountResult] = await db
-      .select({ value: count() })
-      .from(reviews)
-      .where(
-        and(
-          eq(reviews.isPublished, true),
-          eq(reviews.rating, 5),
-          isNotNull(reviews.comment),
-          sql`length(${reviews.comment}) > 0`
-        )
-      )
     const totalReviews = reviewsCountResult?.value || 0
 
     // Default to 0 if no reviews
     const rawRating = ratingResult?.value ? Number(ratingResult.value) : 0
     const rawSatisfaction = rawRating ? Math.round((rawRating / 5) * 100) : 0
 
-    if (!stats) {
-      return {
-        courses: 0,
-        students: 0,
-        certificates: 0,
-        satisfaction: 0,
-        totalReviews
-      }
-    }
-
     return {
       courses: publishedCourseCount,
-      students: stats.student_count,
-      certificates: stats.certified_student_count,
+      students: studentsResult?.value || 0,
+      certificates: certificatesResult?.value || 0,
       satisfaction: rawSatisfaction,
       totalReviews
     }
@@ -94,6 +69,7 @@ export async function getLandingPageReviews() {
         )
       )
       .orderBy(desc(reviews.createdAt))
+      .limit(20)
 
     return rows
   } catch (error) {

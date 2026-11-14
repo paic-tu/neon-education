@@ -17,6 +17,7 @@ import {
   Video,
   FileText,
   Headphones,
+  Ticket,
 } from "lucide-react"
 
 function InstructorNav({ isCollapsed, unreadCount = 0 }: { isCollapsed?: boolean, unreadCount?: number }) {
@@ -25,57 +26,6 @@ function InstructorNav({ isCollapsed, unreadCount = 0 }: { isCollapsed?: boolean
   const locale = segments[1] || "ar"
   const pathWithoutLocale = "/" + segments.slice(2).join("/")
   const isAr = locale === "ar"
-  const [liveCourses, setLiveCourses] = useState<Array<{ id: string; titleEn: string; titleAr: string }>>([])
-  const [loadingLive, setLoadingLive] = useState(false)
-
-  useEffect(() => {
-    const controller = new AbortController()
-    let timeout: ReturnType<typeof setTimeout> | null = null
-    let stopped = false
-
-    const fetchLive = async (isInitial = false) => {
-      try {
-        if (isInitial) setLoadingLive(true)
-        const res = await fetch("/api/live/courses", { signal: controller.signal })
-        const data = await res.json()
-        const next = (data?.courses || []).slice(0, 10)
-        setLiveCourses(next)
-        return Array.isArray(next) ? next.length : 0
-      } catch {
-        return null
-      } finally {
-        if (isInitial) setLoadingLive(false)
-      }
-    }
-
-    const schedule = async (isInitial = false) => {
-      if (stopped) return
-      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
-        timeout = setTimeout(() => schedule(false), 60_000)
-        return
-      }
-      const count = await fetchLive(isInitial)
-      const nextDelay = typeof count === "number" ? (count > 0 ? 10_000 : 120_000) : 60_000
-      timeout = setTimeout(() => schedule(false), nextDelay)
-    }
-
-    const onVisibility = () => {
-      if (typeof document === "undefined") return
-      if (document.visibilityState === "visible") {
-        if (timeout) clearTimeout(timeout)
-        schedule(false)
-      }
-    }
-
-    schedule(true)
-    document.addEventListener("visibilitychange", onVisibility)
-    return () => {
-      stopped = true
-      controller.abort()
-      if (timeout) clearTimeout(timeout)
-      document.removeEventListener("visibilitychange", onVisibility)
-    }
-  }, [])
 
   const navGroups = [
     {
@@ -87,6 +37,11 @@ function InstructorNav({ isCollapsed, unreadCount = 0 }: { isCollapsed?: boolean
           href: "/instructor/dashboard",
           label: isAr ? "لوحة التحكم" : "Dashboard",
           icon: LayoutDashboard,
+        },
+        {
+          href: "/tickets",
+          label: isAr ? "تذاكري" : "My Tickets",
+          icon: Ticket,
         },
       ],
     },
@@ -193,11 +148,6 @@ function InstructorNav({ isCollapsed, unreadCount = 0 }: { isCollapsed?: boolean
         </div>
       ))}
       
-      {/*
-        قسم "الاستشارات التقنية" و "الدورات المباشرة" أُزيلا من هنا بقرار المستخدم.
-        منطق الاستطلاع liveCourses/loadingLive أعلاه مُحتفظ به مؤقتًا فقط.
-      */}
-
       <div className={cn(!isCollapsed && "mt-4 pt-4 border-t")}>
         {!isCollapsed && (
           <div className="px-3 pb-2 text-xs font-semibold text-muted-foreground">
@@ -245,7 +195,7 @@ function InstructorNav({ isCollapsed, unreadCount = 0 }: { isCollapsed?: boolean
 import { useState, useEffect } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { getUnreadMessageCount } from "@/lib/actions/chat"
+import { useUnreadMessageCount } from "@/hooks/use-portal-notifications"
 
 export function InstructorSidebar() {
   const pathname = usePathname()
@@ -255,21 +205,7 @@ export function InstructorSidebar() {
   
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [mounted, setMounted] = useState(false)
-  const [unreadCount, setUnreadCount] = useState(0)
-
-  useEffect(() => {
-    const fetchCount = async () => {
-      try {
-        const count = await getUnreadMessageCount()
-        setUnreadCount(count)
-      } catch (error) {
-        console.error("Failed to fetch unread count:", error)
-      }
-    }
-    fetchCount()
-    const interval = setInterval(fetchCount, 10000)
-    return () => clearInterval(interval)
-  }, [])
+  const unreadCount = useUnreadMessageCount()
 
   // Load state from local storage
   useEffect(() => {

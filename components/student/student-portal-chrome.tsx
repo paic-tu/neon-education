@@ -4,7 +4,7 @@ import type { ReactNode } from "react"
 import { usePathname } from "next/navigation"
 import { StudentSidebar, StudentMobileNav } from "@/components/student/student-sidebar"
 import { PortalHeader } from "@/components/portal-header"
-import { LiveSessionProvider } from "@/components/live-classroom-client"
+import { LiveSessionProvider } from "@/components/live-session-provider"
 import { cn } from "@/lib/utils"
 
 interface StudentPortalChromeProps {

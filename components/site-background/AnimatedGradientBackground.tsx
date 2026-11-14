@@ -1,13 +1,14 @@
 "use client"
 
 import { useEffect, useRef } from "react"
+import dynamic from "next/dynamic"
 import { usePathname } from "next/navigation"
 import { useTheme } from "@/lib/theme-context"
-import AnimatedGradient from "./AnimatedGradient"
 import { lightGradientConfig, darkGradientConfig } from "./gradient-configs"
-import { startBackgroundAnimation } from "./engine"
 import { DARK_THEME, LIGHT_THEME } from "./themes"
 import styles from "./SiteBackground.module.css"
+
+const AnimatedGradient = dynamic(() => import("./AnimatedGradient"), { ssr: false })
 
 // الصفحات ذات الخلفية المعتمة لا تحتاج تشغيل طبقات الرسم والحركة خلف محتواها.
 const OPAQUE_PAGE_PATH_PATTERN = /^\/[a-z]{2}\/(student|instructor|admin|orders|tickets)(\/|$)/
@@ -18,13 +19,20 @@ export function AnimatedGradientBackground() {
   const isOpaquePageRoute = OPAQUE_PAGE_PATH_PATTERN.test(pathname || "")
   const galaxyCanvasRef = useRef<HTMLCanvasElement>(null)
 
-  // Layer B: the galaxy (stars/nebula/dust/meteors), mounted once per theme
-  // change. It sits underneath the gradient veil below.
   useEffect(() => {
     if (isOpaquePageRoute) return
     const canvas = galaxyCanvasRef.current
     if (!canvas) return
-    return startBackgroundAnimation(canvas, theme === "dark" ? DARK_THEME : LIGHT_THEME)
+    let cancelled = false
+    let stop: (() => void) | undefined
+    // A route change can unmount the canvas before its engine finishes loading.
+    void import("./engine").then(({ startBackgroundAnimation }) => {
+      if (!cancelled) stop = startBackgroundAnimation(canvas, theme === "dark" ? DARK_THEME : LIGHT_THEME)
+    })
+    return () => {
+      cancelled = true
+      stop?.()
+    }
   }, [theme, isOpaquePageRoute])
 
   if (isOpaquePageRoute) return null
@@ -40,9 +48,6 @@ export function AnimatedGradientBackground() {
         style={
           theme === "dark"
             ? { opacity: 0.4, mixBlendMode: "screen" }
-            // "screen" only adds light, so on a near-white page it washes out to
-            // nothing; "multiply" lets the brand hues tint visibly instead while
-            // the gradient's near-white stops stay invisible against the page.
             : { opacity: 0.55, mixBlendMode: "multiply" }
         }
       >

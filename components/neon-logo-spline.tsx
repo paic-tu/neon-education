@@ -1,15 +1,13 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import Spline from "@splinetool/react-spline"
+import dynamic from "next/dynamic"
 import type { Application, SPEObject } from "@splinetool/runtime"
 
+const Spline = dynamic(() => import("./spline-renderer"), { ssr: false })
 const NEON_LOGO_SCENE_URL = "https://prod.spline.design/E5no7iml1pXoVM79/scene.splinecode"
 const LOGO_OBJECT_NAME = "Update the logo shape to ma..."
-
-// Native scale as authored in the Spline scene — treated as the "normal" size on laptop/desktop.
 const BASE_SCALE = 1.7
-// On narrow phones the object renders at this fraction of the base scale (much smaller).
 const MOBILE_SCALE_RATIO = 0.58
 const MOBILE_WIDTH = 375
 const DESKTOP_WIDTH = 1024
@@ -34,7 +32,6 @@ export function NeonLogoSpline({ className = "" }: { className?: string }) {
       logo.scale.y = scale
       logo.scale.z = scale
     }
-
     applyScale()
     window.addEventListener("resize", applyScale)
     return () => window.removeEventListener("resize", applyScale)

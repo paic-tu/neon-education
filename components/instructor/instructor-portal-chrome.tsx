@@ -4,7 +4,7 @@ import type { ReactNode } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
 import { InstructorSidebar, InstructorMobileNav } from "@/components/instructor/instructor-sidebar"
 import { PortalHeader } from "@/components/portal-header"
-import { LiveSessionProvider } from "@/components/live-classroom-client"
+import { LiveSessionProvider } from "@/components/live-session-provider"
 import { cn } from "@/lib/utils"
 
 interface InstructorPortalChromeProps {
