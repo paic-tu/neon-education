@@ -19,7 +19,9 @@ async function main() {
     const [role, tables] = source.split("--> statement-breakpoint")
     await client.query(role)
     await client.query("BEGIN")
+    await client.query("SET LOCAL lock_timeout = '10s'")
     await client.query(tables)
+    await client.query(readFileSync(path.join(__dirname, "../lib/db/migrations/0014_add_event_ticket_numbers.sql"), "utf8"))
     await client.query("COMMIT")
     console.log("Event ticket migration applied successfully.")
   } catch (error) {

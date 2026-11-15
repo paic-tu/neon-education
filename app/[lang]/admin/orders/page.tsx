@@ -10,6 +10,7 @@ import { Search, Filter } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import Link from "next/link"
 import { OrderActionsMenu } from "@/components/admin/order-actions-menu"
+import { renderEmailRecoveryAlert } from "@/components/admin/email-recovery-alert"
 
 export default async function OrdersManagementPage(props: { params: Promise<{ lang: string }> }) {
   const { lang } = await props.params
@@ -31,12 +32,16 @@ export default async function OrdersManagementPage(props: { params: Promise<{ la
     .orderBy(desc(orders.createdAt))
     .limit(100)
 
+  const emailRecoveryAlert = await renderEmailRecoveryAlert({ lang })
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Orders</h1>
         <p className="text-muted-foreground">Manage customer orders and refunds</p>
       </div>
+
+      {emailRecoveryAlert}
 
       <Card>
         <CardContent className="pt-6">

@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 interface BuyerTicket {
   id: string
   ordinal: number
+  ticketNumber: number
   nameAr: string
   nameEn: string
   eventStartsAt: string
@@ -99,7 +100,7 @@ export function BuyerEventTickets({ lang, orderId }: { lang: string; orderId?: s
                 <div className="mt-5 flex flex-wrap items-end justify-between gap-4 border-t border-white/15 pt-4">
                   <div className="space-y-1">
                     <p className="text-xs text-[#CEBDFF]">{isAr ? "رقم التذكرة" : "Ticket Number"}</p>
-                    <p className="w-fit font-mono text-base font-semibold" dir="ltr">#{String(ticket.ordinal).padStart(2, "0")}</p>
+                    <p className="w-fit font-mono text-base font-semibold" dir="ltr">#{String(ticket.ticketNumber).padStart(2, "0")}</p>
                   </div>
                   <div className="space-y-1">
                     <p className="text-xs text-[#CEBDFF]">{isAr ? "حالة التذكرة" : "Ticket Status"}</p>

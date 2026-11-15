@@ -13,6 +13,38 @@ import { getTicketSigningKey, ticketCode, verifyTicketCode } from "../lib/event-
 import { hasPermission, canAccessAdmin } from "../lib/rbac/permissions"
 import { validEventWindow } from "../lib/event-product-validation"
 
+test("ترقيم التذاكر السابقة ثابت ويحافظ على الباركود عند تحديث قاعدة البيانات", async () => {
+  const pg = new PGlite()
+  const product = randomUUID(), userId = randomUUID(), firstItem = randomUUID(), secondItem = randomUUID()
+  const id = randomUUID()
+  try {
+    await pg.exec(`
+      CREATE TABLE products (id UUID PRIMARY KEY);
+      CREATE TABLE event_tickets (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(), product_id UUID REFERENCES products(id),
+        order_item_id UUID, user_id UUID, ordinal INTEGER, created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE (order_item_id, ordinal)
+      );
+    `)
+    await pg.query("INSERT INTO products VALUES ($1)", [product])
+    await pg.query(`INSERT INTO event_tickets (id,product_id,order_item_id,user_id,ordinal,created_at)
+      VALUES ($1,$2,$3,$5,1,NOW()-INTERVAL '1 day'),($6,$2,$4,$5,1,NOW()),
+      ($7,$2,$3,$5,2,NOW()-INTERVAL '1 day')`, [id, product, firstItem, secondItem, userId, randomUUID(), randomUUID()])
+    const identity = { id, productId: product, orderItemId: firstItem, userId, ordinal: 1 }
+    const secret = "ticket-number-test-secret-with-at-least-32-characters"
+    const code = ticketCode(identity, secret)
+    const migration = readFileSync(new URL("../lib/db/migrations/0014_add_event_ticket_numbers.sql", import.meta.url), "utf8")
+    await pg.exec(`BEGIN; ${migration} COMMIT;`)
+    const first = await pg.query<{ id: string; ticket_number: number }>("SELECT id,ticket_number FROM event_tickets ORDER BY ticket_number")
+    assert.deepEqual(first.rows.map((ticket) => ticket.ticket_number), [1, 2, 3])
+    assert.equal(first.rows[0].id, id)
+    await pg.exec(`BEGIN; ${migration} COMMIT;`)
+    const again = await pg.query<{ id: string; ticket_number: number }>("SELECT id,ticket_number FROM event_tickets ORDER BY ticket_number")
+    assert.deepEqual(again.rows, first.rows)
+    assert(verifyTicketCode(code, { ...identity, ticketNumber: 1 } as typeof identity, secret))
+  } finally { await pg.close() }
+})
+
 test("تذاكر الفعاليات: التوقيع والدفع والصلاحيات والتزامن", async (t) => {
   const previousKey = process.env.EVENT_TICKET_SECRET
   process.env.EVENT_TICKET_SECRET = randomBytes(32).toString("hex")
@@ -50,6 +82,8 @@ test("تذاكر الفعاليات: التوقيع والدفع والصلاح�
     const migration = readFileSync(new URL("../lib/db/migrations/0011_add_event_tickets.sql", import.meta.url), "utf8").split("--> statement-breakpoint")
     await pg.exec(migration[0])
     await pg.exec(migration[1])
+    const numberingMigration = readFileSync(new URL("../lib/db/migrations/0014_add_event_ticket_numbers.sql", import.meta.url), "utf8")
+    await pg.exec(`BEGIN; ${numberingMigration} COMMIT;`)
     for (const [id, role, name] of [[admin, "admin", "Admin"], [staff, "event_staff", "Gate"], [buyer, "student", "Buyer"], [otherStaff, "event_staff", "Other gate"]]) {
       await pg.query("INSERT INTO users (id, role, name) VALUES ($1,$2,$3)", [id, role, name])
     }
@@ -65,10 +99,56 @@ test("تذاكر الفعاليات: التوقيع والدفع والصلاح�
     await t.test("إصدار تذكرة لكل وحدة وإعادة التنفيذ دون تكرار", async () => {
       await Promise.all([issueTickets(connection, order), issueTickets(connection, order)])
       assert.equal((await tickets()).length, 3)
+      assert.deepEqual((await tickets()).map((ticket) => ticket.ticketNumber).sort((a, b) => a - b), [1, 2, 3])
+      const counter = await pg.query<{ last_number: number }>("SELECT last_number FROM event_ticket_counters WHERE product_id=$1", [product])
+      assert.equal(counter.rows[0].last_number, 3)
     })
     const [first, second, third] = (await tickets()).sort((a, b) => a.ordinal - b.ordinal)
     const firstCode = ticketCode(first)
 
+    await t.test("رقم التذكرة يستمر عبر الطلبات والحسابات ولا يعاد إلى واحد", async () => {
+      const nextBuyer = randomUUID(), nextOrder = randomUUID(), nextItem = randomUUID()
+      await pg.query("INSERT INTO users (id,role,name) VALUES ($1,'student','Next buyer')", [nextBuyer])
+      await pg.query("INSERT INTO orders VALUES ($1,$2,'paid','stream',NOW())", [nextOrder, nextBuyer])
+      await pg.query("INSERT INTO order_items (id,order_id,product_id,quantity) VALUES ($1,$2,$3,2)", [nextItem, nextOrder, product])
+      await Promise.all([issueTickets(connection, nextOrder), issueTickets(connection, nextOrder)])
+      const next = await connection.select().from(eventTickets).where(eq(eventTickets.orderItemId, nextItem))
+      assert.deepEqual(next.map((ticket) => ticket.ticketNumber).sort((a, b) => a - b), [4, 5])
+      assert.deepEqual(next.map((ticket) => ticket.ordinal).sort((a, b) => a - b), [1, 2])
+      const before = ticketCode(next[0])
+      await pg.exec(`BEGIN; ${numberingMigration} COMMIT;`)
+      const refreshed = await connection.select().from(eventTickets).where(eq(eventTickets.id, next[0].id))
+      assert.equal(refreshed[0].ticketNumber, next[0].ticketNumber)
+      assert.equal(ticketCode(refreshed[0]), before)
+    })
+    await t.test("إصدار طلبين مختلفين بالتزامن يعطي أرقاما فريدة ومتتابعة", async () => {
+      const ids = [randomUUID(), randomUUID()]
+      for (const id of ids) {
+        await pg.query("INSERT INTO orders VALUES ($1,$2,'paid','stream',NOW())", [id, buyer])
+        await pg.query("INSERT INTO order_items (order_id,product_id,quantity) VALUES ($1,$2,1)", [id, product])
+      }
+      await Promise.all(ids.map((id) => issueTickets(connection, id)))
+      const numbered = await pg.query<{ ticket_number: number }>("SELECT ticket_number FROM event_tickets WHERE product_id=$1 ORDER BY ticket_number", [product])
+      assert.deepEqual(numbered.rows.map((ticket) => ticket.ticket_number), [1, 2, 3, 4, 5, 6, 7])
+    })
+    await t.test("لكل فعالية عداد مستقل ولا يعاد استخدام رقم تذكرة محذوفة", async () => {
+      const anotherEvent = randomUUID(), anotherOrder = randomUUID(), anotherItem = randomUUID()
+      await pg.query("INSERT INTO products (id,product_type,event_starts_at,event_ends_at,event_location) VALUES ($1,'event_ticket',NOW()-INTERVAL '1 hour',NOW()+INTERVAL '1 hour','Hall')", [anotherEvent])
+      await pg.query("INSERT INTO orders VALUES ($1,$2,'paid','stream',NOW())", [anotherOrder, buyer])
+      await pg.query("INSERT INTO order_items (id,order_id,product_id,quantity) VALUES ($1,$2,$3,1)", [anotherItem, anotherOrder, anotherEvent])
+      await issueTickets(connection, anotherOrder)
+      let fresh = await connection.select().from(eventTickets).where(eq(eventTickets.orderItemId, anotherItem))
+      assert.equal(fresh[0].ticketNumber, 1)
+      await pg.query("DELETE FROM event_tickets WHERE id=$1", [fresh[0].id])
+      await issueTickets(connection, anotherOrder)
+      fresh = await connection.select().from(eventTickets).where(eq(eventTickets.orderItemId, anotherItem))
+      assert.equal(fresh[0].ticketNumber, 2)
+    })
+    await t.test("فشل إصدار تذكرة لا يستهلك الرقم التالي", async () => {
+      await assert.rejects(pg.query("INSERT INTO event_tickets (order_item_id,product_id,user_id,ordinal) VALUES ($1,$2,$3,0)", [item, product, buyer]))
+      const counter = await pg.query<{ last_number: number }>("SELECT last_number FROM event_ticket_counters WHERE product_id=$1", [product])
+      assert.equal(counter.rows[0].last_number, 7)
+    })
     await t.test("توقيع غير قابل للتعديل أو نقل الملكية", () => {
       assert(verifyTicketCode(firstCode, first))
       assert(!verifyTicketCode(`${firstCode.slice(0, -1)}${firstCode.endsWith("0") ? "1" : "0"}`, first))
@@ -127,6 +207,7 @@ test("تذاكر الفعاليات: التوقيع والدفع والصلاح�
       await rejectsCode(admitTicket(connection, staff, product, ticketCode(second)), "NOT_ADMISSIBLE")
       await issueTickets(connection, order)
       assert.equal((await tickets()).length, 3)
+      assert.deepEqual((await tickets()).map((ticket) => ticket.ticketNumber).sort((a, b) => a - b), [1, 2, 3])
       await pg.query("UPDATE orders SET status='paid' WHERE id=$1", [order])
     })
     await t.test("تعطيل صاحب التذكرة يمنع الدخول", async () => {

@@ -7,6 +7,7 @@ import { ticketCode } from "../lib/event-ticket-code"
 
 const ticket: WalletTicket = {
   id: "9ab24041-5cf8-426d-9669-bbaac28ec692", userId: "buyer", orderItemId: "item", productId: "event", ordinal: 1,
+  ticketNumber: 27,
   nameAr: "فعالية نيون", nameEn: "Neon event", eventLocation: "Riyadh",
   eventStartsAt: new Date(Date.now() + 3600000), eventEndsAt: new Date(Date.now() + 7200000),
   checkedInAt: null, revokedAt: null, orderId: "order",
@@ -76,6 +77,7 @@ test("Wallet creates a signed Neon archive with the existing admission barcode",
     assert.equal(payload.serialNumber, ticket.id)
     assert.equal(payload.passTypeIdentifier, "pass.test.neon")
     assert.equal(payload.eventTicket.primaryFields[0].value, ticket.nameAr)
+    assert.equal(payload.eventTicket.headerFields[0].value, "#27")
     assert.equal(payload.sharingProhibited, true)
     process.env.APPLE_WALLET_TEAM_ID = "WRONGTEAM"
     assert(!appleWalletAvailable())

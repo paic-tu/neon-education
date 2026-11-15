@@ -5,6 +5,19 @@ import { getSiteSettings } from "./db/queries"
 
 const NEON_BLUE = "#0070f3"
 const NEON_DARK = "#0f172a"
+let mailSettings: Promise<Awaited<ReturnType<typeof getSiteSettings>>> | undefined
+let settingsExpireAt = 0
+
+function getMailSettings() {
+  if (!mailSettings || Date.now() >= settingsExpireAt) {
+    settingsExpireAt = Date.now() + 60_000
+    mailSettings = getSiteSettings().catch((error) => {
+      mailSettings = undefined
+      throw error
+    })
+  }
+  return mailSettings
+}
 
 /**
  * Base template for Neon branded emails
@@ -56,7 +69,7 @@ export async function sendMail({
   idempotencyKey?: string
 }) {
   try {
-    const settings = await getSiteSettings()
+    const settings = await getMailSettings()
 
     // If the HTML is already a full document (e.g. rendered from react-email
     // templates), send it as-is. Otherwise wrap it in the legacy template.
@@ -65,20 +78,33 @@ export async function sendMail({
 
     // 1. Try Resend if API key is available
     const resendKey = process.env.RESEND_API_KEY
+    // SMTP has no idempotency contract, so automatic receipt retries require the API.
+    if (idempotencyKey && !resendKey) {
+      return { success: false, error: "Receipt sending requires Resend API", errorCode: "EMAIL_RECEIPT_PROVIDER_NOT_CONFIGURED" }
+    }
     if (resendKey) {
       const resend = new Resend(resendKey)
+      const options = { idempotencyKey, signal: AbortSignal.timeout(10_000) }
       const { data, error } = await resend.emails.send({
         from: process.env.RESEND_FROM || `"${settings.siteName}" <onboarding@resend.dev>`,
         to: [to],
         subject,
         text: text || "",
         html: finalHtml || "",
-      }, idempotencyKey ? { idempotencyKey } : undefined)
+      }, options)
 
       if (error) {
-        console.error("Resend error:", error)
-        if (idempotencyKey) return { success: false, error: "Email provider rejected receipt" }
+        const domainUnverified = /domain.*not verified/i.test(error.message)
+        const rejected = [400, 401, 403, 422, 429].includes(Number((error as { statusCode?: number }).statusCode))
+        const errorCode = domainUnverified ? "EMAIL_DOMAIN_UNVERIFIED" : rejected ? "EMAIL_PROVIDER_REJECTED" : "EMAIL_DELIVERY_UNCERTAIN"
+        console.error("Resend rejected email", { errorCode, providerError: error.name })
+        const smtpHost = (settings.email as any)?.smtpHost || process.env.SMTP_HOST
+        // Resend SMTP has the same domain restrictions. Receipt retries must keep API idempotency.
+        if (idempotencyKey || String(smtpHost).toLowerCase() === "smtp.resend.com") {
+          return { success: false, error: domainUnverified ? "Sending domain is not verified" : "Email provider rejected receipt", errorCode }
+        }
       } else {
+        if (!data?.id) return { success: false, error: "Email provider returned no message ID", errorCode: "EMAIL_PROVIDER_INVALID_RESPONSE" }
         console.log("Email sent via Resend:", data?.id)
         return { success: true, messageId: data?.id }
       }
@@ -87,7 +113,7 @@ export async function sendMail({
     // 2. Fallback to SMTP
     const smtp = settings.email as any
     const host = smtp?.smtpHost || process.env.SMTP_HOST
-    const port = smtp?.smtpPort || Number(process.env.SMTP_PORT) || 465
+    const port = Number(smtp?.smtpPort || process.env.SMTP_PORT) || 465
     const user = smtp?.smtpUser || process.env.SMTP_USER
     const pass = smtp?.smtpPassword || process.env.SMTP_PASSWORD
 
@@ -104,20 +130,26 @@ export async function sendMail({
         user,
         pass,
       },
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 20_000,
     })
 
-    const info = await transporter.sendMail({
-      from: `"${settings.siteName}" <${user}>`,
-      to,
-      subject,
-      text,
-      html: finalHtml || html, // Use templated or original
-    })
-
-    console.log("Message sent via SMTP: %s", info.messageId)
-    return { success: true, messageId: info.messageId }
+    try {
+      const info = await transporter.sendMail({
+        from: process.env.SMTP_FROM || (String(host).toLowerCase() === "smtp.resend.com" ? process.env.RESEND_FROM : undefined) || `"${settings.siteName}" <${user}>`,
+        to,
+        subject,
+        text,
+        html: finalHtml || html, // Use templated or original
+      })
+      console.log("Message sent via SMTP: %s", info.messageId)
+      return { success: true, messageId: info.messageId }
+    } finally {
+      transporter.close()
+    }
   } catch (error: any) {
-    console.error("Error sending email:", error)
-    return { success: false, error: error.message }
+    console.error("Error sending email", { errorName: error?.name })
+    return { success: false, error: "Email delivery could not be confirmed", errorCode: "EMAIL_DELIVERY_UNCERTAIN" }
   }
 }

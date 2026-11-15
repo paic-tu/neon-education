@@ -7,7 +7,7 @@ loadEnvConfig(path.resolve(__dirname, ".."))
 
 async function main() {
   if (!process.argv.includes("--apply")) {
-    console.log("Use --apply to add the payment email notification table.")
+    console.log("Use --apply to add payment email notification and recovery tables.")
     return
   }
   const connectionString = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL
@@ -16,6 +16,7 @@ async function main() {
   await client.connect()
   try {
     await client.query(readFileSync(path.join(__dirname, "../lib/db/migrations/0012_add_payment_email_notifications.sql"), "utf8"))
+    await client.query(readFileSync(path.join(__dirname, "../lib/db/migrations/0013_add_payment_email_recovery.sql"), "utf8"))
     console.log("Payment email notification migration applied.")
   } finally {
     await client.end()

@@ -24,6 +24,7 @@ export async function issueTickets(connection: any, orderId: string) {
       AND i.is_event_ticket = true AND i.quantity BETWEEN 1 AND 99
       AND p.product_type = 'event_ticket'
       AND o.payment_provider IN ('stream', 'coupon')
+    ORDER BY i.product_id, i.id, n.ordinal
     ON CONFLICT (order_item_id, ordinal) DO NOTHING
     RETURNING id
   `)

@@ -6,6 +6,7 @@ import sharp from "sharp"
 import { ticketCode, type TicketIdentity } from "@/lib/event-ticket-code"
 
 export interface WalletTicket extends TicketIdentity {
+  ticketNumber: number
   nameAr: string | null
   nameEn: string | null
   eventStartsAt: Date | string | null
@@ -95,7 +96,7 @@ export async function createAppleWalletPass(ticket: WalletTicket, lang: string) 
     pass.auxiliaryFields.push({ key: "date", label: ar ? "التاريخ" : "DATE", value: new Date(ticket.eventStartsAt).toISOString(), dateStyle: "PKDateStyleMedium", timeStyle: "PKDateStyleShort" })
     pass.setRelevantDate(new Date(ticket.eventStartsAt))
   }
-  pass.headerFields.push({ key: "number", label: ar ? "التذكرة" : "TICKET", value: `#${ticket.ordinal}` })
+  pass.headerFields.push({ key: "number", label: ar ? "التذكرة" : "TICKET", value: `#${String(ticket.ticketNumber).padStart(2, "0")}` })
   pass.backFields.push(
     { key: "privacy", label: ar ? "تعليمات الدخول" : "ADMISSION", value: ar ? "لا تشارك الباركود. التذكرة لشخص واحد ودخول واحد فقط. التذاكر الملغاة أو المستخدمة لا تسمح بالدخول." : "Keep your barcode private. One person, one admission. Revoked or used tickets cannot admit entry." },
     { key: "order", label: ar ? "الطلب" : "ORDER", value: ticket.orderId },

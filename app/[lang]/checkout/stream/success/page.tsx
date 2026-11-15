@@ -14,6 +14,7 @@ import { BuyerEventTickets } from "@/components/buyer-event-tickets"
 import { z } from "zod"
 import { notifyPaidOrder } from "@/lib/payments/payment-notifications"
 import { isDirectEventOrder } from "@/lib/payments/checkout-mode"
+import { after } from "next/server"
 
 export default async function StreamCheckoutSuccessPage(props: {
   params: Promise<{ lang: string }>
@@ -131,7 +132,10 @@ export default async function StreamCheckoutSuccessPage(props: {
     // صفحة التذكرة ترسل الإيصال في الخلفية حتى لا يتأخر ظهور الباركود.
     redirect(`/${lang}/tickets/${order.id}`)
   }
-  if (order && resolvedStatus === "paid") await notifyPaidOrder(order.id)
+  if (order && resolvedStatus === "paid") {
+    const orderId = order.id
+    after(async () => { await notifyPaidOrder(orderId) })
+  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col">

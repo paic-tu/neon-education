@@ -58,7 +58,8 @@ export async function listEventProducts(userId: string) {
 export async function getBuyerTickets(userId: string, cursor?: string, orderId?: string, ticketId?: string) {
   return db.select({
     id: eventTickets.id, orderItemId: eventTickets.orderItemId, productId: eventTickets.productId,
-    userId: eventTickets.userId, ordinal: eventTickets.ordinal, checkedInAt: eventTickets.checkedInAt,
+    userId: eventTickets.userId, ordinal: eventTickets.ordinal, ticketNumber: eventTickets.ticketNumber,
+    checkedInAt: eventTickets.checkedInAt,
     revokedAt: eventTickets.revokedAt, nameAr: products.nameAr, nameEn: products.nameEn,
     eventStartsAt: products.eventStartsAt, eventEndsAt: products.eventEndsAt,
     eventLocation: products.eventLocation, orderId: orders.id,

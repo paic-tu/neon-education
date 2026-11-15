@@ -375,6 +375,22 @@ export const paymentEmailNotifications = pgTable("payment_email_notifications", 
   claimedAt: timestamp("claimed_at", { withTimezone: true }),
   sentAt: timestamp("sent_at", { withTimezone: true }),
   messageId: varchar("message_id", { length: 255 }),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  firstAttemptAt: timestamp("first_attempt_at", { withTimezone: true }),
+  nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
+  lastError: varchar("last_error", { length: 80 }),
+  lastEvent: varchar("last_event", { length: 80 }),
+  deliveryCheckedAt: timestamp("delivery_checked_at", { withTimezone: true }),
+})
+
+export const paymentEmailHealth = pgTable("payment_email_health", {
+  id: text("id").primaryKey(),
+  recoveryFrom: timestamp("recovery_from", { withTimezone: true }).notNull().defaultNow(),
+  lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+  domainStatus: varchar("domain_status", { length: 80 }),
+  lastError: varchar("last_error", { length: 80 }),
+  claimId: uuid("claim_id"),
+  claimedAt: timestamp("claimed_at", { withTimezone: true }),
 })
 
 // Order Items table
@@ -405,15 +421,24 @@ export const eventTickets = pgTable("event_tickets", {
   productId: uuid("product_id").notNull().references(() => products.id),
   userId: uuid("user_id").notNull().references(() => users.id),
   ordinal: integer("ordinal").notNull(),
+  ticketNumber: integer("ticket_number").notNull(),
   checkedInAt: timestamp("checked_in_at", { withTimezone: true }),
   checkedInBy: uuid("checked_in_by").references(() => users.id),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   itemOrdinalUnique: uniqueIndex("event_tickets_item_ordinal_unique").on(t.orderItemId, t.ordinal),
+  productNumberUnique: uniqueIndex("event_tickets_product_number_unique").on(t.productId, t.ticketNumber),
   ownerIndex: index("event_tickets_owner_idx").on(t.userId),
   productIndex: index("event_tickets_product_idx").on(t.productId),
   ordinalCheck: check("event_tickets_ordinal_check", sql`${t.ordinal} BETWEEN 1 AND 99`),
+}))
+
+export const eventTicketCounters = pgTable("event_ticket_counters", {
+  productId: uuid("product_id").primaryKey().references(() => products.id),
+  lastNumber: integer("last_number").notNull().default(0),
+}, (t) => ({
+  numberCheck: check("event_ticket_counters_last_number_check", sql`${t.lastNumber} >= 0`),
 }))
 
 export const eventScanLimits = pgTable("event_scan_limits", {

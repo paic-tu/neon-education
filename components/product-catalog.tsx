@@ -13,7 +13,7 @@ import { getAllStoreItems } from "@/lib/db/queries"
 import { ShoppingCart, Package, Ticket, MapPin, CreditCard, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import Image from "next/image"
-import { addToCartAction, checkoutAction } from "@/lib/actions/cart"
+import { addToCartAction } from "@/lib/actions/cart"
 
 type CatalogItem = Awaited<ReturnType<typeof getAllStoreItems>>[number]
 
@@ -24,7 +24,7 @@ export function ProductCatalog({ catalog }: { catalog: "store" | "events" }) {
   const { toast } = useToast()
   const [items, setItems] = useState<CatalogItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [checkingOut, setCheckingOut] = useState<string | null>(null)
+  const [addingToCart, setAddingToCart] = useState<string | null>(null)
   const isEvents = catalog === "events"
   const isAr = language === "ar"
   const EmptyIcon = isEvents ? Ticket : Package
@@ -46,11 +46,13 @@ export function ProductCatalog({ catalog }: { catalog: "store" | "events" }) {
     return () => { cancelled = true }
   }, [catalog])
 
-  const handleAddToCart = async (itemId: string) => {
+  const handleAddToCart = async (itemId: string, goToCart = false) => {
     if (!user) {
       router.push(`/${language}/auth/login?callbackUrl=/${language}/${catalog}`)
       return
     }
+    if (addingToCart) return
+    setAddingToCart(itemId)
     try {
       const result = await addToCartAction(itemId, "product")
       if (result.error) throw new Error(result.error)
@@ -60,48 +62,15 @@ export function ProductCatalog({ catalog }: { catalog: "store" | "events" }) {
           ? (isAr ? "تمت إضافة التذكرة للسلة" : "Ticket added to cart")
           : (isAr ? "تم إضافة المنتج للسلة" : "Product added to cart"),
       })
+      if (goToCart) router.push(`/${language}/cart`)
     } catch {
       toast({
         title: isAr ? "خطأ" : "Error",
         description: isAr ? "تعذرت الإضافة للسلة" : "Failed to add to cart",
         variant: "destructive",
       })
-    }
-  }
-
-  const handleEventCheckout = async (itemId: string) => {
-    if (!user) {
-      router.push(`/${language}/auth/login?callbackUrl=${encodeURIComponent(`/${language}/events`)}`)
-      return
-    }
-    if (checkingOut) return
-    setCheckingOut(itemId)
-    try {
-      const result = await checkoutAction(undefined, undefined, language, null, itemId)
-      if (result.error) throw new Error(result.error)
-      if (result.checkoutUrl) {
-        window.location.href = result.checkoutUrl
-        return
-      }
-      if (result.orderId) {
-        if (result.receiptSent === false) {
-          toast({
-            variant: "destructive",
-            title: isAr ? "تعذر إرسال الإيصال" : "Receipt could not be sent",
-            description: isAr ? "تم تأكيد الحجز. يمكنك عرض التذكرة، وستُعاد محاولة إرسال الإيصال عند فتحها." : "Your booking is confirmed. View your ticket to retry sending the receipt.",
-          })
-        }
-        router.push(`/${language}/tickets/${result.orderId}`)
-        return
-      }
-      throw new Error(isAr ? "تعذر تجهيز رابط الدفع" : "Unable to prepare checkout")
-    } catch (error) {
-      toast({
-        title: isAr ? "خطأ" : "Error",
-        description: error instanceof Error ? error.message : (isAr ? "تعذر تجهيز الدفع" : "Unable to prepare checkout"),
-        variant: "destructive",
-      })
-      setCheckingOut(null)
+    } finally {
+      setAddingToCart(null)
     }
   }
 
@@ -170,9 +139,9 @@ export function ProductCatalog({ catalog }: { catalog: "store" | "events" }) {
                     )}
                   </CardContent>
                   <CardFooter>
-                    <Button className="w-full" onClick={() => isTicket ? handleEventCheckout(item.id) : handleAddToCart(item.id)} disabled={available === 0 || ended || (isTicket && checkingOut !== null)}>
-                      {checkingOut === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : isTicket ? <CreditCard className="h-4 w-4" /> : <ShoppingCart className="h-4 w-4" />}
-                      {ended ? (isAr ? "انتهت الفعالية" : "Event ended") : available === 0 ? (isAr ? "نفذ المخزون" : "Out of stock") : checkingOut === item.id ? (isAr ? "جاري تجهيز الدفع..." : "Preparing checkout...") : isTicket ? (isAr ? "احجز الآن" : "Book now") : t("addToCart", language)}
+                    <Button className="w-full" onClick={() => handleAddToCart(item.id, isTicket)} disabled={available === 0 || ended || addingToCart !== null}>
+                      {addingToCart === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : isTicket ? <CreditCard className="h-4 w-4" /> : <ShoppingCart className="h-4 w-4" />}
+                      {ended ? (isAr ? "انتهت الفعالية" : "Event ended") : available === 0 ? (isAr ? "نفذ المخزون" : "Out of stock") : addingToCart === item.id ? (isAr ? "جاري الإضافة للسلة..." : "Adding to cart...") : isTicket ? (isAr ? "احجز الآن" : "Book now") : t("addToCart", language)}
                     </Button>
                   </CardFooter>
                 </Card>
