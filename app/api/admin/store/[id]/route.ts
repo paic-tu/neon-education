@@ -3,11 +3,13 @@ import { z } from "zod"
 import { db } from "@/lib/db"
 import { products } from "@/lib/db/schema"
 import { requirePermission } from "@/lib/rbac/require-permission"
-import { eq, and, isNull } from "drizzle-orm"
+import { eq, and, isNull, sql } from "drizzle-orm"
 import { eventProductFields, validEventWindow } from "@/lib/event-product-validation"
 import { requireEventUser, requireSameOrigin } from "@/lib/events"
 import { getTicketSigningKey } from "@/lib/event-ticket-code"
 import { discardNewStorePaymentProduct, StorePaymentError, syncStorePaymentProduct } from "@/lib/payments/store-product"
+import { eventAddOnInputsSchema, type EventAddOn } from "@/lib/event-add-ons"
+import { syncEventAddOnProducts } from "@/lib/payments/event-add-ons"
 
 const updateSchema = z.object({
   ...eventProductFields,
@@ -22,6 +24,7 @@ const updateSchema = z.object({
   categoryId: z.string().uuid().optional(),
   imageUrl: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
+  eventAddOns: eventAddOnInputsSchema.optional(),
 })
 
 export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
@@ -36,6 +39,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   await requirePermission("store:write")
   const { id } = await props.params
   let paymentProduct: { id: string; created: boolean } | undefined
+  const createdAddOnProducts: string[] = []
 
   try {
     requireSameOrigin(req)
@@ -46,6 +50,9 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     const data = parsed.data
     const existing = await db.query.products.findFirst({ where: eq(products.id, id) })
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 })
+    if (existing.productType !== "event_ticket" && data.eventAddOns?.length) {
+      return NextResponse.json({ error: "Add-ons require an event" }, { status: 400 })
+    }
     if (existing.productType === "event_ticket" || data.productType === "event_ticket") {
       await requireEventUser(true)
       getTicketSigningKey()
@@ -81,16 +88,27 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       previousPrice: existing.price,
     })
     updateData.streamProductId = paymentProduct.id
-    const condition = paymentProduct.created ? and(eq(products.id, id),
-      existing.streamProductId ? eq(products.streamProductId, existing.streamProductId) : isNull(products.streamProductId))
-      : eq(products.id, id)
+    if (data.eventAddOns !== undefined) {
+      updateData.eventAddOns = await syncEventAddOnProducts(data.eventAddOns, existing.eventAddOns, createdAddOnProducts)
+    }
+    const condition = and(eq(products.id, id),
+      existing.streamProductId ? eq(products.streamProductId, existing.streamProductId) : isNull(products.streamProductId),
+      data.eventAddOns !== undefined ? sql`${products.eventAddOns} = ${JSON.stringify(existing.eventAddOns)}::jsonb` : undefined)
     const [updated] = await db.update(products).set(updateData).where(condition).returning()
     if (!updated) {
       if (paymentProduct.created) await discardNewStorePaymentProduct(paymentProduct.id)
+      for (const remoteId of createdAddOnProducts) await discardNewStorePaymentProduct(remoteId)
       return NextResponse.json({ error: "PRODUCT_CONCURRENT_UPDATE" }, { status: 409 })
     }
     return NextResponse.json({ success: true, product: updated })
   } catch (e) {
+    if (createdAddOnProducts.length) {
+      const persisted = await db.query.products.findFirst({ where: eq(products.id, id) })
+        .then((row: { eventAddOns: EventAddOn[] } | undefined) => ({ savedIds: new Set(row?.eventAddOns.map((option) => option.streamProductId) ?? []) })).catch(() => null)
+      if (persisted) for (const remoteId of createdAddOnProducts) {
+        if (!persisted.savedIds.has(remoteId)) await discardNewStorePaymentProduct(remoteId)
+      }
+    }
     if (paymentProduct?.created) {
       const persisted = await db.query.products.findFirst({ where: eq(products.id, id) })
         .then((row: any) => ({ paymentId: row?.streamProductId })).catch(() => null)

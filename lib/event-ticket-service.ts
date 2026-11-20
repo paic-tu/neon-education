@@ -87,15 +87,17 @@ export async function admitTicket(connection: any, userId: string, productId: st
           AND (u.role = 'admin' OR (u.role = 'event_staff' AND EXISTS (
             SELECT 1 FROM event_staff_assignments a WHERE a.user_id = u.id AND a.product_id = t.product_id
           ))))
-      RETURNING t.id, t.user_id, t.checked_in_at
+      RETURNING t.id, t.user_id, t.checked_in_at, t.order_item_id, t.ticket_number
     ), logged AS (
       INSERT INTO audit_logs (user_id, action, resource, resource_id, changes)
       SELECT ${userId}::uuid, 'event_check_in', 'event_ticket', id,
         jsonb_build_object('productId', ${productId}::text, 'checkedInAt', checked_in_at)
       FROM accepted RETURNING id
     )
-    SELECT a.id, a.checked_in_at AS "checkedInAt", u.name AS "attendeeName"
-    FROM accepted a JOIN users u ON u.id = a.user_id WHERE EXISTS (SELECT 1 FROM logged)
+    SELECT a.id, a.checked_in_at AS "checkedInAt", u.name AS "attendeeName",
+      a.ticket_number AS "ticketNumber", i.selected_add_ons AS "addOns"
+    FROM accepted a JOIN users u ON u.id = a.user_id
+    JOIN order_items i ON i.id = a.order_item_id WHERE EXISTS (SELECT 1 FROM logged)
   `))
   if (accepted.length) return accepted[0]
 

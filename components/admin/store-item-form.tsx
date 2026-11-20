@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { useForm } from "react-hook-form"
+import { useForm, useFieldArray, type FieldErrors } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { Button } from "@/components/ui/button"
@@ -14,26 +14,11 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { FormLayout } from "@/components/admin/form-layout"
 import { MediaUploadField } from "@/components/admin/media-upload-field"
 import { toast } from "sonner"
-import { Loader2, ShieldCheck } from "lucide-react"
+import { Loader2, ShieldCheck, Plus, Trash2 } from "lucide-react"
+import type { EventAddOn } from "@/lib/event-add-ons"
+import { formValidationMessages, storeItemFormSchema } from "@/lib/store-item-form-validation"
 
-const storeItemSchema = z.object({
-  nameEn: z.string().min(1, "English name is required"),
-  nameAr: z.string().min(1, "Arabic name is required"),
-  descriptionEn: z.string().min(10, "English description required"),
-  descriptionAr: z.string().min(10, "Arabic description required"),
-  price: z.number().min(0),
-  pointsCost: z.number().int().min(0).optional().nullable(),
-  stock: z.number().int().min(0),
-  categoryId: z.string().min(1, "Category is required").uuid("Invalid category id"),
-  imageUrl: z.string().optional().or(z.literal("")).nullable(),
-  isActive: z.boolean().default(true),
-  productType: z.enum(["physical", "event_ticket"]).default("physical"),
-  eventStartsAt: z.string().optional(),
-  eventEndsAt: z.string().optional(),
-  eventLocation: z.string().max(500).optional(),
-})
-
-type StoreItemFormData = z.infer<typeof storeItemSchema>
+type StoreItemFormData = z.infer<ReturnType<typeof storeItemFormSchema>>
 
 function newCreationId() {
   const bytes = crypto.getRandomValues(new Uint8Array(16))
@@ -63,6 +48,7 @@ interface StoreItemFormProps {
     eventStartsAt?: Date | string | null
     eventEndsAt?: Date | string | null
     eventLocation?: string | null
+    eventAddOns?: EventAddOn[]
   }
 }
 
@@ -70,6 +56,7 @@ export function StoreItemForm({ lang, categories, product }: StoreItemFormProps)
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [isUploadingImage, setIsUploadingImage] = useState(false)
+  const [validationMessages, setValidationMessages] = useState<string[]>([])
   const creationId = useRef<string | null>(null)
   const isAr = lang === "ar"
   const localDate = (value?: Date | string | null) => {
@@ -79,7 +66,7 @@ export function StoreItemForm({ lang, categories, product }: StoreItemFormProps)
   }
 
   const form = useForm<StoreItemFormData>({
-    resolver: zodResolver(storeItemSchema),
+    resolver: zodResolver(storeItemFormSchema(isAr)),
     defaultValues: {
       nameEn: product?.nameEn || "",
       nameAr: product?.nameAr || "",
@@ -95,10 +82,16 @@ export function StoreItemForm({ lang, categories, product }: StoreItemFormProps)
       eventStartsAt: localDate(product?.eventStartsAt),
       eventEndsAt: localDate(product?.eventEndsAt),
       eventLocation: product?.eventLocation ?? "",
+      eventAddOns: (product?.eventAddOns ?? []).map((option) => ({
+        id: option.id, nameAr: option.nameAr, nameEn: option.nameEn, price: Number(option.price),
+        noteAr: option.noteAr ?? "", noteEn: option.noteEn ?? "",
+      })),
     },
   })
+  const addOns = useFieldArray({ control: form.control, name: "eventAddOns", keyName: "fieldKey" })
 
   async function onSubmit(data: StoreItemFormData) {
+    setValidationMessages([])
     if (isUploadingImage) {
       toast.error(isAr ? "انتظر اكتمال رفع الصورة قبل الحفظ" : "Wait for the image upload to finish before saving")
       return
@@ -120,6 +113,7 @@ export function StoreItemForm({ lang, categories, product }: StoreItemFormProps)
           eventStartsAt: isEvent ? new Date(data.eventStartsAt!).toISOString() : null,
           eventEndsAt: isEvent ? new Date(data.eventEndsAt!).toISOString() : null,
           eventLocation: isEvent ? data.eventLocation : null,
+          eventAddOns: isEvent ? data.eventAddOns : [],
         }),
       })
 
@@ -144,9 +138,24 @@ export function StoreItemForm({ lang, categories, product }: StoreItemFormProps)
     }
   }
 
+  function onInvalid(errors: FieldErrors<StoreItemFormData>) {
+    const issues = formValidationMessages(errors)
+    const messages = issues.map(({ path, message }) => {
+      const match = path.match(/^eventAddOns\.(\d+)\.(.+)$/)
+      if (!match) return message
+      const label = ({ nameAr: isAr ? "الاسم بالعربية" : "Arabic name", nameEn: isAr ? "الاسم بالإنجليزية" : "English name",
+        price: isAr ? "السعر" : "Price", noteAr: isAr ? "الملاحظة بالعربية" : "Arabic note", noteEn: isAr ? "الملاحظة بالإنجليزية" : "English note" } as Record<string, string>)[match[2]] ?? match[2]
+      return isAr ? `الإضافة ${Number(match[1]) + 1}: تحقق من ${label}` : `Add-on ${Number(match[1]) + 1}: ${label}: ${message}`
+    })
+    setValidationMessages(messages)
+    toast.error(isAr ? "لم يتم الحفظ: أكمل الحقول الموضحة" : "Not saved: check the highlighted fields", { description: messages[0] })
+    const first = issues.find((issue) => issue.path && !issue.path.endsWith(".root"))
+    if (first) form.setFocus(first.path as keyof StoreItemFormData)
+  }
+
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <form noValidate onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="space-y-6">
         <FormLayout
           title={isAr ? "نوع المنتج" : "Product Type"}
           description={isAr ? "تذاكر الفعاليات تصدر تلقائياً بعد الدفع المؤكد، وتستخدم مرة واحدة." : "Event tickets are issued after confirmed payment and admitted once."}
@@ -154,7 +163,10 @@ export function StoreItemForm({ lang, categories, product }: StoreItemFormProps)
           <FormField control={form.control} name="productType" render={({ field }) => (
             <FormItem>
               <FormLabel>{isAr ? "النوع" : "Type"}</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value} disabled={!!product}>
+              <Select onValueChange={(value) => {
+                field.onChange(value)
+                if (value !== "event_ticket") form.setValue("eventAddOns", [])
+              }} value={field.value} disabled={!!product}>
                 <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                 <SelectContent>
                   <SelectItem value="physical">{isAr ? "منتج متجر" : "Store product"}</SelectItem>
@@ -188,6 +200,52 @@ export function StoreItemForm({ lang, categories, product }: StoreItemFormProps)
             </div>
           )}
         </FormLayout>
+        {form.watch("productType") === "event_ticket" && (
+          <FormLayout
+            title={isAr ? "إضافات التذكرة" : "Ticket Add-ons"}
+            description={isAr ? "يختار المشتري الإضافات في السلة. السعر لكل تذكرة، ويمكن وضع صفر لإضافة مجانية. تعديل الإضافات لا يغيّر الطلبات السابقة." : "Buyers choose add-ons in the cart. Prices are per ticket; use zero for free options. Changes do not affect existing orders."}
+          >
+            {addOns.fields.map((option, index) => (
+              <div key={option.fieldKey} className="grid gap-3 rounded-xl border p-4 md:grid-cols-3">
+                <FormField control={form.control} name={`eventAddOns.${index}.nameAr`} render={({ field }) => (
+                  <FormItem><FormLabel>{isAr ? "الاسم بالعربية" : "Arabic name"}</FormLabel>
+                    <FormControl><Input {...field} dir="rtl" placeholder={isAr ? "وجبة عشاء" : "Arabic add-on name"} disabled={isLoading} /></FormControl><FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name={`eventAddOns.${index}.nameEn`} render={({ field }) => (
+                  <FormItem><FormLabel>{isAr ? "الاسم بالإنجليزية" : "English name"}</FormLabel>
+                    <FormControl><Input {...field} dir="ltr" placeholder="Dinner meal" disabled={isLoading} /></FormControl><FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name={`eventAddOns.${index}.price`} render={({ field }) => (
+                  <FormItem><FormLabel>{isAr ? "السعر الإضافي (ر.س)" : "Additional price (SAR)"}</FormLabel>
+                    <FormControl><Input {...field} type="number" min="0" max="999999.99" step="0.01" disabled={isLoading}
+                      onChange={(event) => field.onChange(Number.parseFloat(event.target.value))} /></FormControl><FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name={`eventAddOns.${index}.noteAr`} render={({ field }) => (
+                  <FormItem className="md:col-span-3"><FormLabel>{isAr ? "ملاحظة توضيحية بالعربية (اختياري)" : "Arabic explanatory note (optional)"}</FormLabel>
+                    <FormControl><Textarea {...field} value={field.value ?? ""} dir="rtl" maxLength={500} rows={2}
+                      placeholder={isAr ? "مثال: تشمل وجبة عشاء لشخص واحد، ولا تشمل المشروبات." : "Explain what this add-on includes in Arabic."} disabled={isLoading} /></FormControl><FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name={`eventAddOns.${index}.noteEn`} render={({ field }) => (
+                  <FormItem className="md:col-span-3"><FormLabel>{isAr ? "ملاحظة توضيحية بالإنجليزية (اختياري)" : "English explanatory note (optional)"}</FormLabel>
+                    <FormControl><Textarea {...field} value={field.value ?? ""} dir="ltr" maxLength={500} rows={2}
+                      placeholder="Includes dinner for one person. Drinks are not included." disabled={isLoading} /></FormControl><FormMessage />
+                  </FormItem>
+                )} />
+                <Button type="button" size="sm" variant="ghost" className="w-fit text-destructive" onClick={() => addOns.remove(index)} disabled={isLoading}>
+                  <Trash2 className="h-4 w-4" />{isAr ? "حذف الإضافة" : "Remove add-on"}
+                </Button>
+              </div>
+            ))}
+            <Button type="button" variant="outline" disabled={isLoading || addOns.fields.length >= 20}
+              onClick={() => addOns.append({ id: newCreationId(), nameAr: "", nameEn: "", price: 0, noteAr: "", noteEn: "" })}>
+              <Plus className="h-4 w-4" />{isAr ? "إضافة ميزة جديدة" : "Add an option"}
+            </Button>
+          </FormLayout>
+        )}
         <FormLayout title="Basic Information" description="Enter store item details">
           <div className="grid gap-4 md:grid-cols-2">
             <FormField
@@ -383,6 +441,12 @@ export function StoreItemForm({ lang, categories, product }: StoreItemFormProps)
           />
         </FormLayout>
 
+        {validationMessages.length > 0 && (
+          <div role="alert" className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+            <p className="mb-2 font-semibold">{isAr ? "لم يتم الحفظ، صحح الحقول التالية:" : "Not saved. Correct these fields:"}</p>
+            <ul className="list-inside list-disc space-y-1">{validationMessages.map((message, index) => <li key={index}>{message}</li>)}</ul>
+          </div>
+        )}
         <div className="flex gap-4">
           <Button type="submit" disabled={isLoading || isUploadingImage}>
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

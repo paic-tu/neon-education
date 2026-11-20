@@ -63,9 +63,11 @@ test("حجز البريد في قاعدة البيانات والتكرار وإ
       CREATE TABLE courses (id UUID PRIMARY KEY, title_ar TEXT, title_en TEXT);
       CREATE TABLE order_items (id UUID PRIMARY KEY, order_id UUID, product_id UUID, course_id UUID, quantity INTEGER, price NUMERIC(10,2), is_event_ticket BOOLEAN);
       CREATE TABLE event_tickets (id UUID PRIMARY KEY, order_item_id UUID, revoked_at TIMESTAMP);
+      CREATE TABLE cart_items (id UUID PRIMARY KEY);
     `)
     await pg.exec(readFileSync(new URL("../lib/db/migrations/0012_add_payment_email_notifications.sql", import.meta.url), "utf8"))
     await pg.exec(readFileSync(new URL("../lib/db/migrations/0013_add_payment_email_recovery.sql", import.meta.url), "utf8"))
+    await pg.exec(readFileSync(new URL("../lib/db/migrations/0015_add_event_add_ons.sql", import.meta.url), "utf8"))
     const fixture = async (status = "paid") => {
       const id = randomUUID(), userId = randomUUID()
       await pg.query("INSERT INTO users VALUES ($1,'Buyer','buyer@example.test')", [userId])

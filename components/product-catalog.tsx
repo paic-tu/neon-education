@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { NavBar } from "@/components/nav-bar"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -14,6 +14,10 @@ import { ShoppingCart, Package, Ticket, MapPin, CreditCard, Loader2 } from "luci
 import { useToast } from "@/hooks/use-toast"
 import Image from "next/image"
 import { addToCartAction } from "@/lib/actions/cart"
+import dynamic from "next/dynamic"
+import { EventCatalogCard, type EventCatalogItem } from "@/components/event-catalog-card"
+
+const EventDetails = dynamic(() => import("@/components/event-details").then((module) => module.EventDetails), { ssr: false })
 
 type CatalogItem = Awaited<ReturnType<typeof getAllStoreItems>>[number]
 
@@ -25,6 +29,8 @@ export function ProductCatalog({ catalog }: { catalog: "store" | "events" }) {
   const [items, setItems] = useState<CatalogItem[]>([])
   const [loading, setLoading] = useState(true)
   const [addingToCart, setAddingToCart] = useState<string | null>(null)
+  const [selectedEvent, setSelectedEvent] = useState<EventCatalogItem | null>(null)
+  const detailsTrigger = useRef<HTMLElement | null>(null)
   const isEvents = catalog === "events"
   const isAr = language === "ar"
   const EmptyIcon = isEvents ? Ticket : Package
@@ -84,7 +90,7 @@ export function ProductCatalog({ catalog }: { catalog: "store" | "events" }) {
           </h1>
           <p className="text-foreground/75">
             {isEvents
-              ? (isAr ? "اكتشف فعاليات نيون واحجز تذكرتك" : "Discover Neon events and book your ticket")
+              ? (isAr ? "اكتشف فعاليات نيون، اطّلع على التفاصيل، واختر تجربة تناسبك." : "Discover Neon events, explore the details, and choose your experience.")
               : (isAr ? "احصل على منتجات منصة نيون" : "Get Neon products")}
           </p>
         </div>
@@ -100,9 +106,15 @@ export function ProductCatalog({ catalog }: { catalog: "store" | "events" }) {
             </h3>
           </div>
         ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className={`grid gap-6 md:grid-cols-2 ${isEvents ? "xl:grid-cols-3" : "lg:grid-cols-3"}`}>
             {items.map((item) => {
               const isTicket = item.productType === "event_ticket"
+              if (isTicket) return <EventCatalogCard key={item.id} item={item} isAr={isAr}
+                busy={addingToCart !== null} adding={addingToCart === item.id}
+                onDetails={() => {
+                  detailsTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+                  setSelectedEvent(item)
+                }} onBook={() => handleAddToCart(item.id, true)} />
               const ended = isTicket && !!item.eventEndsAt && new Date(item.eventEndsAt) < new Date()
               const available = item.availableQuantity ?? item.stockQuantity
               return (
@@ -150,6 +162,10 @@ export function ProductCatalog({ catalog }: { catalog: "store" | "events" }) {
           </div>
         )}
       </main>
+      {selectedEvent && <EventDetails item={selectedEvent} isAr={isAr} busy={addingToCart !== null}
+        adding={addingToCart === selectedEvent.id} onClose={() => setSelectedEvent(null)}
+        onCloseFocus={() => detailsTrigger.current?.focus()}
+        onBook={() => handleAddToCart(selectedEvent.id, true)} />}
     </div>
   )
 }

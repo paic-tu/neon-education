@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { renderSubscriptionSuccessEmail } from "@/lib/emails"
+import type { SelectedEventAddOn } from "@/lib/event-add-ons"
 
 export interface ReceiptData {
   id: string
@@ -7,7 +8,7 @@ export interface ReceiptData {
   totalAmount: string
   paidAt: Date | string
   paymentProvider: string | null
-  items: { name: string; quantity: number; price: string; isEventTicket: boolean }[]
+  items: { name: string; quantity: number; price: string; isEventTicket: boolean; selectedAddOns?: SelectedEventAddOn[] }[]
   ticketCount: number
 }
 
@@ -20,12 +21,16 @@ export async function buildPaymentReceipt(data: ReceiptData) {
   const method = data.paymentProvider === "coupon" ? "قسيمة / طلب مجاني"
     : data.paymentProvider === "manual" ? "دفع أكدته الإدارة" : "Stream Pay"
   const title = "تم تأكيد الدفع - منصة نيون التعليمية"
+  const items = data.items.map((item) => ({
+    ...item, name: item.selectedAddOns?.length
+      ? `${item.name} (${item.selectedAddOns.map((option) => `${option.nameAr}: ${option.price} ريال${option.noteAr || option.noteEn ? ` - ${option.noteAr || option.noteEn}` : ""}`).join(", ")})` : item.name,
+  }))
   const rendered = await renderSubscriptionSuccessEmail({
     language: "ar",
     dashboardUrl: url,
     receipt: {
       userName: data.name, orderId: data.id, amount, paidAt: date, method,
-      items: data.items, isEvent, ticketCount: data.ticketCount,
+      items, isEvent, ticketCount: data.ticketCount,
     },
   })
   return { subject: title, ...rendered, url }

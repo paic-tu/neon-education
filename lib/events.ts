@@ -62,7 +62,7 @@ export async function getBuyerTickets(userId: string, cursor?: string, orderId?:
     checkedInAt: eventTickets.checkedInAt,
     revokedAt: eventTickets.revokedAt, nameAr: products.nameAr, nameEn: products.nameEn,
     eventStartsAt: products.eventStartsAt, eventEndsAt: products.eventEndsAt,
-    eventLocation: products.eventLocation, orderId: orders.id,
+    eventLocation: products.eventLocation, orderId: orders.id, addOns: orderItems.selectedAddOns,
   }).from(eventTickets)
     .innerJoin(orderItems, eq(orderItems.id, eventTickets.orderItemId))
     .innerJoin(orders, eq(orders.id, orderItems.orderId))

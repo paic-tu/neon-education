@@ -78,12 +78,14 @@ test("تذاكر الفعاليات: التوقيع والدفع والصلاح�
       CREATE TABLE orders (id UUID PRIMARY KEY, user_id UUID REFERENCES users(id), status TEXT, payment_provider TEXT, paid_at TIMESTAMP);
       CREATE TABLE order_items (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), order_id UUID REFERENCES orders(id), product_id UUID REFERENCES products(id), quantity INTEGER);
       CREATE TABLE audit_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID REFERENCES users(id), action TEXT, resource TEXT, resource_id UUID, changes JSONB, created_at TIMESTAMP DEFAULT NOW());
+      CREATE TABLE cart_items (id UUID PRIMARY KEY);
     `)
     const migration = readFileSync(new URL("../lib/db/migrations/0011_add_event_tickets.sql", import.meta.url), "utf8").split("--> statement-breakpoint")
     await pg.exec(migration[0])
     await pg.exec(migration[1])
     const numberingMigration = readFileSync(new URL("../lib/db/migrations/0014_add_event_ticket_numbers.sql", import.meta.url), "utf8")
     await pg.exec(`BEGIN; ${numberingMigration} COMMIT;`)
+    await pg.exec(readFileSync(new URL("../lib/db/migrations/0015_add_event_add_ons.sql", import.meta.url), "utf8"))
     for (const [id, role, name] of [[admin, "admin", "Admin"], [staff, "event_staff", "Gate"], [buyer, "student", "Buyer"], [otherStaff, "event_staff", "Other gate"]]) {
       await pg.query("INSERT INTO users (id, role, name) VALUES ($1,$2,$3)", [id, role, name])
     }
@@ -93,6 +95,8 @@ test("تذاكر الفعاليات: التوقيع والدفع والصلاح�
     await pg.query("INSERT INTO event_staff_assignments (product_id,user_id,assigned_by) VALUES ($1,$2,$3)", [product, staff, admin])
     await pg.query("INSERT INTO orders VALUES ($1,$2,'paid','stream',NOW())", [order, buyer])
     await pg.query("INSERT INTO order_items (id,order_id,product_id,quantity) VALUES ($1,$2,$3,3)", [item, order, product])
+    const dinner = [{ id: randomUUID(), nameAr: "وجبة عشاء", nameEn: "Dinner", price: "25.00" }]
+    await pg.query("UPDATE order_items SET selected_add_ons=$1::jsonb WHERE id=$2", [JSON.stringify(dinner), item])
     const tickets = async () => connection.select().from(eventTickets).where(eq(eventTickets.orderItemId, item))
     const rejectsCode = async (operation: Promise<unknown>, expected: string) => assert.rejects(operation, (e: unknown) => e instanceof EventError && e.code === expected)
 
@@ -179,6 +183,8 @@ test("تذاكر الفعاليات: التوقيع والدفع والصلاح�
         admitTicket(connection, admin, product, firstCode),
       ])
       assert.equal(outcomes.filter((r) => r.status === "fulfilled").length, 1)
+      const accepted = outcomes.find((r) => r.status === "fulfilled") as PromiseFulfilledResult<any>
+      assert.deepEqual(accepted.value.addOns, dinner)
       const logs = await pg.query<{ count: number }>("SELECT count(*)::int AS count FROM audit_logs WHERE action='event_check_in' AND resource_id=$1", [first.id])
       assert.equal(logs.rows[0].count, 1)
       await rejectsCode(admitTicket(connection, staff, product, firstCode), "ALREADY_CHECKED_IN")

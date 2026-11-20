@@ -16,8 +16,10 @@ export async function GET(req: Request) {
       if (!z.string().uuid().safeParse(requestedId).success) throw new EventError(400, "INVALID_DATA")
       if (!events.some((event) => event.id === requestedId)) throw new EventError(403, "FORBIDDEN")
       attendance = resultRows(await db.execute(sql`
-        SELECT t.id, t.checked_in_at AS "checkedInAt", u.name AS "attendeeName", staff.name AS "staffName"
+        SELECT t.id, t.checked_in_at AS "checkedInAt", u.name AS "attendeeName", staff.name AS "staffName",
+          t.ticket_number AS "ticketNumber", i.selected_add_ons AS "addOns"
         FROM event_tickets t JOIN users u ON u.id = t.user_id
+        JOIN order_items i ON i.id = t.order_item_id
         LEFT JOIN users staff ON staff.id = t.checked_in_by
         WHERE t.product_id = ${requestedId}::uuid AND t.checked_in_at IS NOT NULL
         ORDER BY t.checked_in_at DESC LIMIT 100

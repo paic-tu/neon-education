@@ -13,6 +13,9 @@ import { Trash2, ShoppingCart, CreditCard, ShieldCheck, Truck } from "lucide-rea
 import { useToast } from "@/hooks/use-toast"
 import { removeFromCartAction, validateCouponAction, checkoutAction } from "@/lib/actions"
 import Link from "next/link"
+import { CartEventOptions } from "@/components/cart-event-options"
+import { updateCartItemAddOnsAction } from "@/lib/actions/cart"
+import { eventItemUnitPrice, type EventAddOn } from "@/lib/event-add-ons"
 
 interface CartItem {
   id: string
@@ -30,8 +33,10 @@ interface CartItem {
     price: string
     imageUrl: string | null
     productType?: string
+    eventAddOns?: EventAddOn[]
   } | null
   quantity: number
+  selectedAddOnIds?: string[]
 }
 
 interface CartClientProps {
@@ -45,7 +50,11 @@ export function CartClient({ initialCart }: CartClientProps) {
   const router = useRouter()
   const { language } = useLanguage()
   const { toast } = useToast()
-  const [isPending, startTransition] = useTransition()
+  const [transitionPending, startTransition] = useTransition()
+  const [savingAddOns, setSavingAddOns] = useState<string | null>(null)
+  const [selections, setSelections] = useState<Record<string, string[]>>(() =>
+    Object.fromEntries((initialCart?.items ?? []).map((item) => [item.id, item.selectedAddOnIds ?? []])))
+  const isPending = transitionPending || savingAddOns !== null
   const isAr = language === "ar"
   const [couponInput, setCouponInput] = useState("")
   const [appliedCoupon, setAppliedCoupon] = useState<{
@@ -57,12 +66,17 @@ export function CartClient({ initialCart }: CartClientProps) {
   } | null>(null)
   
   const items = initialCart?.items || []
+  const selectedOptions = (item: CartItem) => (item.product?.eventAddOns ?? [])
+    .filter((option) => (selections[item.id] ?? item.selectedAddOnIds ?? []).includes(option.id))
+  const invalidSelection = items.some((item) => (selections[item.id] ?? item.selectedAddOnIds ?? [])
+    .some((id) => !(item.product?.eventAddOns ?? []).some((option) => option.id === id)))
   const hasEventTickets = items.some((item) => item.product?.productType === "event_ticket")
   const hasCourses = items.some((item) => Boolean(item.course))
   const itemsCount = items.reduce((acc, it) => acc + (Number(it.quantity) || 0), 0)
   
   const subtotal = items.reduce((acc, item) => {
-    const price = item.course ? parseFloat(item.course.price) : item.product ? parseFloat(item.product.price) : 0
+    const price = item.course ? parseFloat(item.course.price) : item.product
+      ? Number(eventItemUnitPrice(item.product.price, selectedOptions(item))) : 0
     const qty = Number(item.quantity) || 1
     return acc + price * qty
   }, 0)
@@ -104,6 +118,7 @@ export function CartClient({ initialCart }: CartClientProps) {
   }
 
   const handleCheckout = () => {
+    if (isPending || invalidSelection) return
     startTransition(async () => {
       const couponIds = appliedCoupon?.id ? [appliedCoupon.id] : null
       const result = await checkoutAction(undefined, undefined, language, couponIds)
@@ -144,6 +159,25 @@ export function CartClient({ initialCart }: CartClientProps) {
         })
       }
     })
+  }
+
+  const changeAddOn = async (item: CartItem, optionId: string, checked: boolean) => {
+    if (isPending) return
+    const current = selections[item.id] ?? item.selectedAddOnIds ?? []
+    const ids = (checked ? [...current, optionId] : current.filter((id) => id !== optionId))
+      .filter((id) => (item.product?.eventAddOns ?? []).some((option) => option.id === id))
+    setSavingAddOns(item.id)
+    try {
+      const result = await updateCartItemAddOnsAction(item.id, ids)
+      if (!result.success) throw new Error(result.error)
+      setSelections((previous) => ({ ...previous, [item.id]: result.selectedAddOnIds! }))
+      router.refresh()
+    } catch (error) {
+      toast({ variant: "destructive", title: isAr ? "تعذر حفظ الإضافة" : "Unable to save add-on",
+        description: error instanceof Error ? error.message : (isAr ? "أعد المحاولة" : "Please retry") })
+    } finally {
+      setSavingAddOns(null)
+    }
   }
 
   const applyCoupon = () => {
@@ -238,9 +272,10 @@ export function CartClient({ initialCart }: CartClientProps) {
               : item.product?.price || "0"
               
             const image = item.course?.thumbnailUrl || item.product?.imageUrl
-            const unit = Number.parseFloat(price) || 0
-            const typeLabel = item.course ? (isAr ? "دورة" : "Course") : (isAr ? "منتج" : "Product")
-            const href = item.course ? `/${language}/courses/${item.course.id}` : `/${language}/store`
+            const unit = Number(eventItemUnitPrice(price, selectedOptions(item)))
+            const isEvent = item.product?.productType === "event_ticket"
+            const typeLabel = item.course ? (isAr ? "دورة" : "Course") : isEvent ? (isAr ? "تذكرة فعالية" : "Event ticket") : (isAr ? "منتج" : "Product")
+            const href = item.course ? `/${language}/courses/${item.course.id}` : `/${language}/${isEvent ? "events" : "store"}`
 
             return (
               <Card key={item.id} className="overflow-hidden">
@@ -270,6 +305,18 @@ export function CartClient({ initialCart }: CartClientProps) {
                         </div>
                       </div>
 
+                      {isEvent && ((item.product?.eventAddOns?.length ?? 0) > 0 || (selections[item.id]?.length ?? 0) > 0) && (
+                        <CartEventOptions
+                          itemId={item.id}
+                          options={item.product?.eventAddOns ?? []}
+                          selectedIds={selections[item.id] ?? item.selectedAddOnIds ?? []}
+                          quantity={item.quantity}
+                          isAr={isAr}
+                          disabled={isPending}
+                          saving={savingAddOns === item.id}
+                          onChange={(id, checked) => changeAddOn(item, id, checked)}
+                        />
+                      )}
                       <div className="mt-3 flex items-center justify-end border-t border-border pt-3">
                         <Button
                           variant="ghost"
@@ -356,7 +403,7 @@ export function CartClient({ initialCart }: CartClientProps) {
                   </div>
                 </CardContent>
                 <CardFooter className="flex flex-col gap-2">
-                  <Button className="w-full gap-2" size="lg" onClick={handleCheckout} disabled={isPending}>
+                  <Button className="w-full gap-2" size="lg" onClick={handleCheckout} disabled={isPending || invalidSelection}>
                     <CreditCard className="h-4 w-4" />
                     {isPending ? (isAr ? "جاري المعالجة..." : "Processing...") : isAr ? "إتمام الشراء" : "Checkout"}
                   </Button>
@@ -393,7 +440,7 @@ export function CartClient({ initialCart }: CartClientProps) {
             <div className="text-xs text-muted-foreground">{isAr ? "الإجمالي" : "Total"}</div>
             <div className="font-semibold truncate">{formatMoney(total)}</div>
           </div>
-          <Button className="gap-2 shrink-0" onClick={handleCheckout} disabled={isPending}>
+          <Button className="gap-2 shrink-0" onClick={handleCheckout} disabled={isPending || invalidSelection}>
             <CreditCard className="h-4 w-4" />
             {isPending ? (isAr ? "..." : "...") : isAr ? "الدفع" : "Pay"}
           </Button>

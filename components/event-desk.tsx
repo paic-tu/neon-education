@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import type { SelectedEventAddOn } from "@/lib/event-add-ons"
 
 interface EventProduct {
   id: string
@@ -24,7 +25,7 @@ interface EventProduct {
 }
 interface DeskData {
   events: EventProduct[]
-  attendance: { id: string; checkedInAt: string; attendeeName: string; staffName: string }[]
+  attendance: { id: string; checkedInAt: string; attendeeName: string; staffName: string; addOns?: SelectedEventAddOn[] }[]
   staff: { id: string; name: string; email: string }[]
   assignments: { productId: string; userId: string }[]
   isAdmin: boolean
@@ -42,7 +43,7 @@ export function EventDesk({ lang }: { lang: string }) {
   const [cameraOn, setCameraOn] = useState(false)
   const [cameraStarting, setCameraStarting] = useState(false)
   const [error, setError] = useState("")
-  const [result, setResult] = useState<{ ok: boolean; message: string; name?: string } | null>(null)
+  const [result, setResult] = useState<{ ok: boolean; message: string; name?: string; addOns?: SelectedEventAddOn[] } | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const controlsRef = useRef<{ stop: () => void } | null>(null)
   const cameraGeneration = useRef(0)
@@ -119,7 +120,7 @@ export function EventDesk({ lang }: { lang: string }) {
       const body = await response.json()
       if (selectedRef.current !== scannedEvent) return
       if (!response.ok) throw new Error(body.error)
-      setResult({ ok: true, message: isAr ? "تم تسجيل الحضور بنجاح" : "Admission recorded", name: body.attendeeName })
+      setResult({ ok: true, message: isAr ? "تم تسجيل الحضور بنجاح" : "Admission recorded", name: body.attendeeName, addOns: body.addOns })
       setCode("")
       await load(scannedEvent).catch(() => setError(isAr ? "تم الحضور، لكن تعذر تحديث القائمة." : "Admission saved, but the list could not refresh."))
     } catch (e) {
@@ -222,11 +223,11 @@ export function EventDesk({ lang }: { lang: string }) {
                 <Input id="event-ticket-code" dir="ltr" value={code} onChange={(e) => setCode(e.target.value)} maxLength={160} autoComplete="off" spellCheck={false} disabled={busy} placeholder="NEVT1.…" />
                 <Button type="submit" className="w-full bg-[#2F5257] text-white hover:bg-[#2F5257]/90" disabled={busy || !code.trim()}>{busy && <Loader2 className="me-2 h-4 w-4 animate-spin" />}{isAr ? "التحقق وتسجيل الحضور" : "Verify and admit"}</Button>
               </form>
-              {result && <div role="status" aria-live="polite" className={`flex gap-3 rounded-xl border p-4 ${result.ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "border-destructive/30 bg-destructive/10 text-destructive"}`}>{result.ok ? <CheckCircle2 className="h-6 w-6 shrink-0" /> : <XCircle className="h-6 w-6 shrink-0" />}<div><p className="font-semibold">{result.message}</p>{result.name && <p className="mt-1 text-sm">{result.name}</p>}</div></div>}
+              {result && <div role="status" aria-live="polite" className={`flex gap-3 rounded-xl border p-4 ${result.ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "border-destructive/30 bg-destructive/10 text-destructive"}`}>{result.ok ? <CheckCircle2 className="h-6 w-6 shrink-0" /> : <XCircle className="h-6 w-6 shrink-0" />}<div><p className="font-semibold">{result.message}</p>{result.name && <p className="mt-1 text-sm">{result.name}</p>}{!!result.addOns?.length && <p className="mt-2 text-sm">{isAr ? "مزايا التذكرة: " : "Ticket add-ons: "}{result.addOns.map((option) => isAr ? option.nameAr : option.nameEn).join(", ")}</p>}</div></div>}
               <p className="text-xs leading-6 text-muted-foreground">{isAr ? "المسح يتوقف بعد كل تذكرة. لا يتم تسجيل حضور في وضع عدم الاتصال." : "Scanning pauses after every ticket. Offline admission is not supported."}</p>
             </CardContent></Card>
             <Card><CardHeader className="flex flex-row items-center justify-between"><CardTitle className="text-lg">{isAr ? "آخر الحضور" : "Recent admissions"}</CardTitle><Button size="sm" variant="outline" onClick={() => load(selectedId).catch(() => setError(message("")))}>{isAr ? "تحديث" : "Refresh"}</Button></CardHeader><CardContent>
-              {!data.attendance.length ? <p className="py-10 text-center text-sm text-muted-foreground">{isAr ? "لم يُسجّل حضور بعد" : "No admissions yet"}</p> : <div className="max-h-96 space-y-3 overflow-y-auto">{data.attendance.map((item) => <div key={item.id} className="flex items-start justify-between gap-3 rounded-xl border p-3"><div><p className="text-sm font-semibold">{item.attendeeName}</p><p className="mt-1 text-xs text-muted-foreground">{item.staffName}</p></div><span className="text-xs text-muted-foreground">{date(item.checkedInAt)}</span></div>)}</div>}
+              {!data.attendance.length ? <p className="py-10 text-center text-sm text-muted-foreground">{isAr ? "لم يُسجّل حضور بعد" : "No admissions yet"}</p> : <div className="max-h-96 space-y-3 overflow-y-auto">{data.attendance.map((item) => <div key={item.id} className="flex items-start justify-between gap-3 rounded-xl border p-3"><div><p className="text-sm font-semibold">{item.attendeeName}</p><p className="mt-1 text-xs text-muted-foreground">{item.staffName}</p>{!!item.addOns?.length && <p className="mt-1 text-xs text-primary">{item.addOns.map((option) => isAr ? option.nameAr : option.nameEn).join(", ")}</p>}</div><span className="text-xs text-muted-foreground">{date(item.checkedInAt)}</span></div>)}</div>}
             </CardContent></Card>
           </div>
           {data.isAdmin && <Card><CardHeader><CardTitle className="text-lg">{isAr ? "موظفو هذه الفعالية" : "Assigned staff"}</CardTitle><p className="text-sm text-muted-foreground">{isAr ? "أنشئ المستخدم بدور موظف فعاليات أولاً. سحب التعيين يمنع المسح مباشرة." : "Create users with the event staff role first. Revoking assignment immediately blocks scanning."}</p></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2">

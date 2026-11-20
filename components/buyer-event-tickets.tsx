@@ -5,11 +5,13 @@ import { CalendarDays, CheckCircle2, Copy, Loader2, MapPin, RefreshCw, ShieldChe
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import type { SelectedEventAddOn } from "@/lib/event-add-ons"
 
 interface BuyerTicket {
   id: string
   ordinal: number
   ticketNumber: number
+  addOns?: SelectedEventAddOn[]
   nameAr: string
   nameEn: string
   eventStartsAt: string
@@ -114,6 +116,22 @@ export function BuyerEventTickets({ lang, orderId }: { lang: string; orderId?: s
               <div className="space-y-4">
                 <div className="flex items-start gap-3"><MapPin className="mt-1 h-4 w-4 shrink-0 text-primary" /><div className="min-w-0"><p className="mb-1 text-xs text-muted-foreground">{isAr ? "مكان الفعالية" : "VENUE"}</p><p className="break-words text-sm font-medium">{ticket.eventLocation}</p></div></div>
                 <div className="flex items-start gap-3"><CalendarDays className="mt-1 h-4 w-4 shrink-0 text-primary" /><div className="min-w-0"><p className="mb-1 text-xs text-muted-foreground">{isAr ? "تاريخ الفعالية" : "EVENT DATE"}</p><p className="text-sm font-medium">{new Date(ticket.eventStartsAt).toLocaleDateString(isAr ? "ar-SA-u-ca-gregory" : "en-GB", { timeZone: "Asia/Riyadh", dateStyle: "medium" })}</p></div></div>
+                {!!ticket.addOns?.length && (
+                  <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+                    <p className="mb-2 text-sm font-semibold">{isAr ? "مزايا تذكرتك" : "Your Ticket Add-ons"}</p>
+                    <ul className="space-y-2 text-sm">{ticket.addOns.map((option) => (
+                      <li key={option.id} className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="min-w-0">
+                          <span className="block">{isAr ? option.nameAr : option.nameEn}</span>
+                          {(option.noteAr || option.noteEn) && <span className="mt-1 block whitespace-pre-line text-xs text-muted-foreground">
+                            {isAr ? option.noteAr || option.noteEn : option.noteEn || option.noteAr}
+                          </span>}
+                        </span>
+                        <Badge variant="secondary">{isAr ? "ضمن هذه التذكرة" : "Included with this ticket"}</Badge>
+                      </li>
+                    ))}</ul>
+                  </div>
+                )}
               </div>
               <div className="space-y-3 rounded-xl border border-border bg-muted p-4">
                 <p className="flex items-center gap-2 text-sm font-semibold"><Wallet className="h-4 w-4 text-primary" />{isAr ? "محفظة Apple" : "Apple Wallet"}</p>

@@ -4,9 +4,11 @@ import { createPrivateKey, X509Certificate } from "node:crypto"
 import { PKPass } from "passkit-generator"
 import sharp from "sharp"
 import { ticketCode, type TicketIdentity } from "@/lib/event-ticket-code"
+import type { SelectedEventAddOn } from "@/lib/event-add-ons"
 
 export interface WalletTicket extends TicketIdentity {
   ticketNumber: number
+  addOns?: SelectedEventAddOn[]
   nameAr: string | null
   nameEn: string | null
   eventStartsAt: Date | string | null
@@ -97,6 +99,15 @@ export async function createAppleWalletPass(ticket: WalletTicket, lang: string) 
     pass.setRelevantDate(new Date(ticket.eventStartsAt))
   }
   pass.headerFields.push({ key: "number", label: ar ? "التذكرة" : "TICKET", value: `#${String(ticket.ticketNumber).padStart(2, "0")}` })
+  if (ticket.addOns?.length) {
+    const value = ticket.addOns.map((option) => ar ? option.nameAr : option.nameEn).join(", ")
+    pass.secondaryFields.push({ key: "addons", label: ar ? "مزايا التذكرة" : "TICKET ADD-ONS", value })
+    pass.backFields.push({ key: "addons-detail", label: ar ? "الإضافات المختارة" : "SELECTED ADD-ONS", value })
+    ticket.addOns.forEach((option, index) => {
+      const note = ar ? option.noteAr || option.noteEn : option.noteEn || option.noteAr
+      if (note) pass.backFields.push({ key: `addon-note-${index}`, label: ar ? option.nameAr : option.nameEn, value: note })
+    })
+  }
   pass.backFields.push(
     { key: "privacy", label: ar ? "تعليمات الدخول" : "ADMISSION", value: ar ? "لا تشارك الباركود. التذكرة لشخص واحد ودخول واحد فقط. التذاكر الملغاة أو المستخدمة لا تسمح بالدخول." : "Keep your barcode private. One person, one admission. Revoked or used tickets cannot admit entry." },
     { key: "order", label: ar ? "الطلب" : "ORDER", value: ticket.orderId },

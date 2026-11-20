@@ -15,6 +15,7 @@ import {
   check,
 } from "drizzle-orm/pg-core"
 import { relations, sql } from "drizzle-orm"
+import type { EventAddOn, SelectedEventAddOn } from "@/lib/event-add-ons"
 
 // Enums
 export const roleEnum = pgEnum("role", ["student", "instructor", "admin", "manager", "support", "event_staff"])
@@ -316,6 +317,7 @@ export const cartItems = pgTable("cart_items", {
   courseId: uuid("course_id").references(() => courses.id),
   productId: uuid("product_id").references(() => products.id),
   quantity: integer("quantity").notNull().default(1),
+  selectedAddOnIds: jsonb("selected_add_on_ids").$type<string[]>().notNull().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 
@@ -335,6 +337,7 @@ export const products = pgTable("products", {
   eventStartsAt: timestamp("event_starts_at", { withTimezone: true }),
   eventEndsAt: timestamp("event_ends_at", { withTimezone: true }),
   eventLocation: text("event_location"),
+  eventAddOns: jsonb("event_add_ons").$type<EventAddOn[]>().notNull().default([]),
   categoryId: uuid("category_id").references(() => categories.id),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -404,6 +407,7 @@ export const orderItems = pgTable("order_items", {
   quantity: integer("quantity").notNull().default(1),
   price: decimal("price", { precision: 10, scale: 2 }).notNull(),
   isEventTicket: boolean("is_event_ticket").notNull().default(false),
+  selectedAddOns: jsonb("selected_add_ons").$type<SelectedEventAddOn[]>().notNull().default([]),
 })
 
 export const eventStaffAssignments = pgTable("event_staff_assignments", {

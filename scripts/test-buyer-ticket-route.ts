@@ -32,7 +32,8 @@ test("Buyer retains the barcode after admission; revoked tickets have no barcode
     "@/lib/events": { getBuyerTickets: async (userId: string) => {
       assert.equal(userId, "buyer")
       return [
-        { id: "used", userId, orderItemId: "item", ordinal: 1, ticketNumber: 27, checkedInAt: new Date(), revokedAt: null },
+        { id: "used", userId, orderItemId: "item", ordinal: 1, ticketNumber: 27, checkedInAt: new Date(), revokedAt: null,
+          addOns: [{ id: "dinner", nameAr: "وجبة عشاء", nameEn: "Dinner", price: "25.00" }] },
         { id: "revoked", userId, orderItemId: "item", ordinal: 2, ticketNumber: 28, checkedInAt: null, revokedAt: new Date() },
       ]
     } },
@@ -51,6 +52,7 @@ test("Buyer retains the barcode after admission; revoked tickets have no barcode
     const { tickets } = await response.json()
     assert.equal(tickets[0].code, "code-used")
     assert.equal(tickets[0].ticketNumber, 27)
+    assert.equal(tickets[0].addOns[0].nameAr, "وجبة عشاء")
     assert(tickets[0].qr.startsWith("data:image/png;base64,"))
     assert(tickets[0].checkedInAt)
     assert(!("userId" in tickets[0]))

@@ -21,8 +21,9 @@ import { randomUUID } from "node:crypto"
 import { notifyCouponOrderWithRetry, notifyPaidOrder } from "@/lib/payments/payment-notifications"
 import { DIRECT_EVENT_ORDER_NOTE, isDirectEventOrder } from "@/lib/payments/checkout-mode"
 import { z } from "zod"
+import { checkoutItemKey, eventAddOnIdsSchema, eventItemUnitPrice, moneyInHalalas, resolveEventAddOns, snapshotEventAddOns, type SelectedEventAddOn } from "@/lib/event-add-ons"
 
-function normalizeCouponIds(input: unknown) {
+function normalizeCouponIds(input: unknown): string[] {
   if (!input) return []
   if (Array.isArray(input)) {
     return Array.from(new Set(input.map((x) => String(x || "").trim()).filter(Boolean))).sort()
@@ -252,6 +253,29 @@ export async function updateCartItemQuantityAction(cartItemId: string, quantity:
   }
 }
 
+export async function updateCartItemAddOnsAction(cartItemId: string, selectedIds: string[]) {
+  try {
+    const session = await auth()
+    if (!session?.user?.id) return { error: "Unauthorized" }
+    const id = z.string().uuid().parse(cartItemId)
+    const ids = eventAddOnIdsSchema.parse(selectedIds)
+    const [item] = await db.select({
+      id: cartItems.id, cartId: cartItems.cartId, productType: products.productType, eventAddOns: products.eventAddOns,
+    }).from(cartItems).innerJoin(carts, eq(carts.id, cartItems.cartId))
+      .innerJoin(products, eq(products.id, cartItems.productId))
+      .where(and(eq(cartItems.id, id), eq(carts.userId, session.user.id))).limit(1)
+    if (!item || item.productType !== "event_ticket") return { error: "Event cart item not found" }
+    const selected = resolveEventAddOns(item.eventAddOns, ids).map((option) => option.id)
+    await db.update(cartItems).set({ selectedAddOnIds: selected })
+      .where(and(eq(cartItems.id, item.id), eq(cartItems.cartId, item.cartId)))
+    revalidatePath("/ar/cart")
+    revalidatePath("/en/cart")
+    return { success: true, selectedAddOnIds: selected }
+  } catch {
+    return { error: "تعذر حفظ الإضافات. حدّث السلة وأعد المحاولة / Unable to save add-ons. Refresh and retry." }
+  }
+}
+
 export async function validateCouponAction(code: string) {
   console.log("[Action] validateCouponAction started")
   try {
@@ -329,7 +353,7 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
             }
         })
         const cart = directProduct
-          ? { id: "", items: [{ course: null, product: directProduct, courseId: null, productId: directProduct.id, quantity: 1 }] }
+          ? { id: "", items: [{ course: null, product: directProduct, courseId: null, productId: directProduct.id, quantity: 1, selectedAddOnIds: [] as string[] }] }
           : existingCart
 
         if (!cart || cart.items.length === 0) {
@@ -346,8 +370,9 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
             const qty = item.quantity || 1
             if (!Number.isInteger(qty) || qty < 1 || qty > 99) return { error: "Invalid quantity" }
             if (item.course) {
-                price = parseFloat(item.course.price || "0")
-                validItems.push({ type: 'course', id: item.course.id, price, title: item.course.titleEn, quantity: qty })
+                price = moneyInHalalas(item.course.price || "0") / 100
+                validItems.push({ type: 'course', id: item.course.id, price, title: item.course.titleEn, quantity: qty,
+                  streamProductId: item.course.streamProductId, selectedAddOns: [], streamAddOns: [] })
             } else if (item.product) {
                 if (!item.product.isActive) return { error: "Product is unavailable" }
                 if (item.product.productType === "event_ticket") {
@@ -356,14 +381,19 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
                     return { error: "Event ticket sales have ended" }
                   }
                 }
-                price = parseFloat(item.product.price || "0")
-                validItems.push({ type: 'product', id: item.product.id, price, title: item.product.nameEn, quantity: qty })
+                const options = item.product.productType === "event_ticket"
+                  ? resolveEventAddOns(item.product.eventAddOns, item.selectedAddOnIds) : []
+                if (item.product.productType !== "event_ticket" && item.selectedAddOnIds?.length) return { error: "Invalid add-ons" }
+                const selectedAddOns = snapshotEventAddOns(options)
+                price = Number(eventItemUnitPrice(item.product.price || "0", selectedAddOns))
+                validItems.push({ type: 'product', id: item.product.id, price, title: item.product.nameEn, quantity: qty,
+                  streamProductId: item.product.streamProductId, selectedAddOns, streamAddOns: options })
             }
-            total += price * qty
+            total = Number((total + price * qty).toFixed(2))
         }
 
         const shouldUseStream = Boolean(process.env.STREAM_API_KEY_BASE64 || (process.env.STREAM_API_KEY && process.env.STREAM_API_SECRET))
-        const hasEventTickets = cart.items.some((item) => item.product?.productType === "event_ticket")
+        const hasEventTickets = cart.items.some((item: { product?: { productType?: string } | null }) => item.product?.productType === "event_ticket")
 
         if (!shouldUseStream) {
             if (hasEventTickets) return { error: "Event tickets require verified gateway payment" }
@@ -422,15 +452,13 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
         }
 
         const itemsForStream: Array<{ productId: string; quantity: number }> = []
-        for (const ci of cart.items) {
-            if (ci.course) {
-                const pid = (ci.course as any).streamProductId as string | null | undefined
-                if (!pid) return { error: `Stream product_id is missing for course: ${ci.course.titleEn}` }
-                itemsForStream.push({ productId: pid, quantity: ci.quantity || 1 })
-            } else if (ci.product) {
-                const pid = (ci.product as any).streamProductId as string | null | undefined
-                if (!pid) return { error: `Stream product_id is missing for product: ${ci.product.nameEn}` }
-                itemsForStream.push({ productId: pid, quantity: ci.quantity || 1 })
+        for (const ci of validItems) {
+            if (!ci.streamProductId) return { error: `Payment product is missing: ${ci.title}` }
+            itemsForStream.push({ productId: ci.streamProductId, quantity: ci.quantity })
+            for (const option of ci.streamAddOns) {
+              if (moneyInHalalas(option.price) === 0) continue
+              if (!option.streamProductId) return { error: "Event add-on payment product is missing" }
+              itemsForStream.push({ productId: option.streamProductId, quantity: ci.quantity })
             }
         }
 
@@ -452,7 +480,7 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
         const existingOrder = await db.query.orders.findFirst({
           where: and(eq(orders.userId, userId), eq(orders.status, "pending"), eq(orders.paymentProvider, "stream"), isNotNull(orders.paymentLinkUrl)),
           orderBy: [desc(orders.createdAt)],
-          with: { items: { columns: { courseId: true, productId: true, quantity: true } } },
+          with: { items: { columns: { courseId: true, productId: true, quantity: true, price: true, selectedAddOns: true } } },
           columns: {
             id: true,
             paymentLinkId: true,
@@ -469,13 +497,16 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
         if (streamConsumerId === user.streamConsumerId && existingOrder?.paymentLinkUrl
           && isDirectEventOrder(existingOrder.notes) === Boolean(directEventId)
           && Array.isArray(existingOrder.items) && existingOrder.items.length > 0) {
-          const cartKey = cart.items
-            .map((it) => `${it.courseId || it.productId}:${it.quantity || 1}`)
+          const cartKey = validItems
+            .map((it) => checkoutItemKey({
+              courseId: it.type === "course" ? it.id : null, productId: it.type === "product" ? it.id : null,
+              quantity: it.quantity, price: it.price.toFixed(2), selectedAddOns: it.selectedAddOns,
+            }))
             .slice()
             .sort()
             .join("|")
           const orderKey = existingOrder.items
-            .map((it) => `${it.courseId || it.productId}:${it.quantity || 1}`)
+            .map((it: { courseId: string | null; productId: string | null; quantity: number; price: string; selectedAddOns: SelectedEventAddOn[] }) => checkoutItemKey(it))
             .slice()
             .sort()
             .join("|")
@@ -614,7 +645,8 @@ export async function checkoutAction(shippingAddress?: string, notes?: string, l
                 courseId: item.type === 'course' ? item.id : null,
                 productId: item.type === 'product' ? item.id : null,
                 price: item.price.toString(),
-                quantity: item.quantity || 1
+                quantity: item.quantity || 1,
+                selectedAddOns: item.selectedAddOns,
         }))
         // حجز كل المقاعد مع الطلب ضمن معاملة واحدة، حتى لا تبقى حجوزات جزئية.
         if (typeof db.batch === "function") {

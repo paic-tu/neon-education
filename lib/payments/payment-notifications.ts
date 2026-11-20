@@ -60,7 +60,7 @@ export async function notifyPaidOrder(orderId: string, connection: Connection = 
     phase = "load_items"
     const items = rows(await connection.execute(sql`
       SELECT COALESCE(p.name_ar, c.title_ar, p.name_en, c.title_en, 'طلب نيون') AS name,
-        i.quantity, i.price, i.is_event_ticket AS "isEventTicket"
+        i.quantity, i.price, i.is_event_ticket AS "isEventTicket", i.selected_add_ons AS "selectedAddOns"
       FROM order_items i LEFT JOIN products p ON p.id = i.product_id
       LEFT JOIN courses c ON c.id = i.course_id WHERE i.order_id = ${orderId}::uuid
     `))
