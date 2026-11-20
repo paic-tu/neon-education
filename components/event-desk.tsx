@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { AdmissionTicketOptions } from "@/components/admission-ticket-options"
 import type { SelectedEventAddOn } from "@/lib/event-add-ons"
 
 interface EventProduct {
@@ -25,7 +26,7 @@ interface EventProduct {
 }
 interface DeskData {
   events: EventProduct[]
-  attendance: { id: string; checkedInAt: string; attendeeName: string; staffName: string; addOns?: SelectedEventAddOn[] }[]
+  attendance: { id: string; checkedInAt: string; attendeeName: string; staffName: string; ticketNumber?: number; addOns?: SelectedEventAddOn[] }[]
   staff: { id: string; name: string; email: string }[]
   assignments: { productId: string; userId: string }[]
   isAdmin: boolean
@@ -43,7 +44,7 @@ export function EventDesk({ lang }: { lang: string }) {
   const [cameraOn, setCameraOn] = useState(false)
   const [cameraStarting, setCameraStarting] = useState(false)
   const [error, setError] = useState("")
-  const [result, setResult] = useState<{ ok: boolean; message: string; name?: string; addOns?: SelectedEventAddOn[] } | null>(null)
+  const [result, setResult] = useState<{ ok: boolean; alreadyCheckedIn?: boolean; message: string; name?: string; checkedInAt?: string; ticketNumber?: number; addOns?: SelectedEventAddOn[] } | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const controlsRef = useRef<{ stop: () => void } | null>(null)
   const cameraGeneration = useRef(0)
@@ -55,7 +56,11 @@ export function EventDesk({ lang }: { lang: string }) {
     UNAUTHENTICATED: isAr ? "انتهت الجلسة. سجّل دخولك مجدداً." : "Your session expired. Sign in again.",
     INVALID_TICKET: isAr ? "تذكرة غير صحيحة أو تخص فعالية أخرى." : "Invalid ticket or a ticket for another event.",
     ALREADY_CHECKED_IN: isAr ? "هذه التذكرة مستخدمة مسبقاً. لم يُسجّل حضور جديد." : "This ticket was already used. No new admission recorded.",
-    NOT_ADMISSIBLE: isAr ? "التذكرة ملغاة، أو الدفع غير مؤكد، أو الدخول غير متاح الآن." : "Ticket revoked, payment unconfirmed, or admission is closed.",
+    TICKET_REVOKED: isAr ? "هذه التذكرة ملغاة. تواصل مع الدعم؛ لم يُسجّل حضور." : "This ticket is revoked. Contact support; no admission was recorded.",
+    PAYMENT_UNCONFIRMED: isAr ? "الدفع لهذا الطلب غير مؤكد في النظام. تواصل مع الدعم برقم الطلب." : "Payment for this order is not confirmed. Contact support with your order number.",
+    EVENT_UNAVAILABLE: isAr ? "هذه الفعالية غير متاحة للدخول حاليًا. تواصل مع الأدمن." : "This event is currently unavailable for admission. Contact the admin.",
+    OWNER_INACTIVE: isAr ? "حساب صاحب التذكرة معطّل. تواصل مع الدعم." : "The ticket owner's account is inactive. Contact support.",
+    NOT_ADMISSIBLE: isAr ? "تعذر تسجيل الحضور. حدّث البيانات وتواصل مع الدعم إذا استمرت المشكلة." : "Admission could not be recorded. Refresh and contact support if the issue persists.",
     RATE_LIMITED: isAr ? "وصلت للحد المسموح. انتظر دقيقة ثم أعد المحاولة." : "Rate limit reached. Wait a minute and retry.",
     INVALID_ASSIGNMENT: isAr ? "تعذر تعديل التعيين. تحقق من دور الموظف." : "Cannot update assignment. Check the staff role.",
   }
@@ -119,10 +124,19 @@ export function EventDesk({ lang }: { lang: string }) {
       })
       const body = await response.json()
       if (selectedRef.current !== scannedEvent) return
-      if (!response.ok) throw new Error(body.error)
-      setResult({ ok: true, message: isAr ? "تم تسجيل الحضور بنجاح" : "Admission recorded", name: body.attendeeName, addOns: body.addOns })
+      if (!response.ok) {
+        if (body.error !== "ALREADY_CHECKED_IN" || !body.ticket) throw new Error(body.error)
+        setResult({
+          ok: false, alreadyCheckedIn: true,
+          message: isAr ? "تم تسجيل دخوله مسبقًا" : "Already checked in",
+          name: body.ticket.attendeeName, checkedInAt: body.ticket.checkedInAt,
+          ticketNumber: body.ticket.ticketNumber, addOns: body.ticket.addOns,
+        })
+      } else {
+        setResult({ ok: true, message: isAr ? "تم تسجيل الحضور" : "Admission recorded", name: body.attendeeName, checkedInAt: body.checkedInAt, ticketNumber: body.ticketNumber, addOns: body.addOns })
+      }
       setCode("")
-      await load(scannedEvent).catch(() => setError(isAr ? "تم الحضور، لكن تعذر تحديث القائمة." : "Admission saved, but the list could not refresh."))
+      await load(scannedEvent).catch(() => setError(isAr ? "تعذر تحديث سجل الحضور. نتيجة المسح ظاهرة أدناه." : "Could not refresh attendance. The scan result is shown below."))
     } catch (e) {
       if (selectedRef.current === scannedEvent) setResult({ ok: false, message: message(e instanceof Error ? e.message : "") })
     } finally {
@@ -190,7 +204,7 @@ export function EventDesk({ lang }: { lang: string }) {
           <div>
             <div className="mb-3 flex items-center gap-2 text-sm text-[#E09F48]"><ShieldCheck className="h-5 w-5" />{isAr ? "دخول موثّق • تذكرة واحدة لكل حضور" : "Verified entry • One admission per ticket"}</div>
             <h1 className="text-2xl font-bold sm:text-3xl">{isAr ? "مركز حضور الفعاليات" : "Event Admission Desk"}</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-white/75">{isAr ? "اختر الفعالية ثم امسح التذكرة. يُتحقق من الصلاحية والدفع ووقت الدخول قبل تسجيل الحضور." : "Select an event and scan a ticket. Permission, payment and admission times are verified before entry."}</p>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-white/75">{isAr ? "اختر الفعالية ثم امسح التذكرة لتسجيل الحضور في أي وقت. يُتحقق من الصلاحية والدفع، وتُستخدم كل تذكرة مرة واحدة فقط." : "Select an event and scan a ticket to record admission at any time. Permission and payment are verified; each ticket can be used only once."}</p>
           </div>
           {data?.isAdmin && <Button asChild className="bg-[#E09F48] text-[#17374A] hover:bg-[#E09F48]/90"><Link href={`/${lang}/admin/store/new`}>{isAr ? "إنشاء تذكرة فعالية" : "Create event product"}</Link></Button>}
         </div>
@@ -223,11 +237,43 @@ export function EventDesk({ lang }: { lang: string }) {
                 <Input id="event-ticket-code" dir="ltr" value={code} onChange={(e) => setCode(e.target.value)} maxLength={160} autoComplete="off" spellCheck={false} disabled={busy} placeholder="NEVT1.…" />
                 <Button type="submit" className="w-full bg-[#2F5257] text-white hover:bg-[#2F5257]/90" disabled={busy || !code.trim()}>{busy && <Loader2 className="me-2 h-4 w-4 animate-spin" />}{isAr ? "التحقق وتسجيل الحضور" : "Verify and admit"}</Button>
               </form>
-              {result && <div role="status" aria-live="polite" className={`flex gap-3 rounded-xl border p-4 ${result.ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "border-destructive/30 bg-destructive/10 text-destructive"}`}>{result.ok ? <CheckCircle2 className="h-6 w-6 shrink-0" /> : <XCircle className="h-6 w-6 shrink-0" />}<div><p className="font-semibold">{result.message}</p>{result.name && <p className="mt-1 text-sm">{result.name}</p>}{!!result.addOns?.length && <p className="mt-2 text-sm">{isAr ? "مزايا التذكرة: " : "Ticket add-ons: "}{result.addOns.map((option) => isAr ? option.nameAr : option.nameEn).join(", ")}</p>}</div></div>}
+              {result && (
+                <div role="status" aria-live="polite" className={`rounded-xl border p-4 ${result.alreadyCheckedIn ? "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300" : result.ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "border-destructive/30 bg-destructive/10 text-destructive"}`}>
+                  <div className="flex items-start gap-3">
+                    {result.alreadyCheckedIn ? <ShieldCheck className="h-6 w-6 shrink-0" /> : result.ok ? <CheckCircle2 className="h-6 w-6 shrink-0" /> : <XCircle className="h-6 w-6 shrink-0" />}
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold">{result.message}</p>
+                      {result.name && <p className="mt-1 break-words text-sm">{result.name}</p>}
+                      {result.alreadyCheckedIn && <p className="mt-1 text-sm">{isAr ? "عرض المزايا فقط؛ لم يُسجّل دخول جديد." : "Showing ticket benefits only; no new admission was recorded."}</p>}
+                      {result.checkedInAt && <p className="mt-2 text-xs">{isAr ? "وقت الدخول المسجل: " : "Recorded admission: "}{date(result.checkedInAt)}</p>}
+                    </div>
+                    {(result.ok || result.alreadyCheckedIn) && result.ticketNumber != null && <Badge variant="secondary"><bdi>#{String(result.ticketNumber).padStart(2, "0")}</bdi></Badge>}
+                  </div>
+                  {(result.ok || result.alreadyCheckedIn) && <AdmissionTicketOptions options={result.addOns} isAr={isAr} />}
+                </div>
+              )}
               <p className="text-xs leading-6 text-muted-foreground">{isAr ? "المسح يتوقف بعد كل تذكرة. لا يتم تسجيل حضور في وضع عدم الاتصال." : "Scanning pauses after every ticket. Offline admission is not supported."}</p>
             </CardContent></Card>
             <Card><CardHeader className="flex flex-row items-center justify-between"><CardTitle className="text-lg">{isAr ? "آخر الحضور" : "Recent admissions"}</CardTitle><Button size="sm" variant="outline" onClick={() => load(selectedId).catch(() => setError(message("")))}>{isAr ? "تحديث" : "Refresh"}</Button></CardHeader><CardContent>
-              {!data.attendance.length ? <p className="py-10 text-center text-sm text-muted-foreground">{isAr ? "لم يُسجّل حضور بعد" : "No admissions yet"}</p> : <div className="max-h-96 space-y-3 overflow-y-auto">{data.attendance.map((item) => <div key={item.id} className="flex items-start justify-between gap-3 rounded-xl border p-3"><div><p className="text-sm font-semibold">{item.attendeeName}</p><p className="mt-1 text-xs text-muted-foreground">{item.staffName}</p>{!!item.addOns?.length && <p className="mt-1 text-xs text-primary">{item.addOns.map((option) => isAr ? option.nameAr : option.nameEn).join(", ")}</p>}</div><span className="text-xs text-muted-foreground">{date(item.checkedInAt)}</span></div>)}</div>}
+              {!data.attendance.length ? <p className="py-10 text-center text-sm text-muted-foreground">{isAr ? "لم يُسجّل حضور بعد" : "No admissions yet"}</p> : (
+                <div className="max-h-96 space-y-3 overflow-y-auto">
+                  {data.attendance.map((item) => (
+                    <div key={item.id} className="min-w-0 rounded-xl border p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="break-words text-sm font-semibold">{item.attendeeName}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">{item.staffName}</p>
+                        </div>
+                        <div className="space-y-1 text-end">
+                          {item.ticketNumber != null && <Badge variant="secondary"><bdi>#{String(item.ticketNumber).padStart(2, "0")}</bdi></Badge>}
+                          <p className="text-xs text-muted-foreground">{date(item.checkedInAt)}</p>
+                        </div>
+                      </div>
+                      <AdmissionTicketOptions options={item.addOns} isAr={isAr} compact />
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent></Card>
           </div>
           {data.isAdmin && <Card><CardHeader><CardTitle className="text-lg">{isAr ? "موظفو هذه الفعالية" : "Assigned staff"}</CardTitle><p className="text-sm text-muted-foreground">{isAr ? "أنشئ المستخدم بدور موظف فعاليات أولاً. سحب التعيين يمنع المسح مباشرة." : "Create users with the event staff role first. Revoking assignment immediately blocks scanning."}</p></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2">

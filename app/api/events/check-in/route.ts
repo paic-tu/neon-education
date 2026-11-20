@@ -19,7 +19,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, ...result }, { headers: { "Cache-Control": "no-store" } })
   } catch (error) {
     const e = error instanceof EventError ? error : new EventError(500, "SERVER_ERROR")
-    return NextResponse.json({ error: e.code }, {
+    return NextResponse.json({
+      error: e.code,
+      ...(e.code === "ALREADY_CHECKED_IN" && e.details ? { ticket: e.details } : {}),
+    }, {
       status: e.status,
       headers: { "Cache-Control": "no-store", ...(e.status === 429 ? { "Retry-After": "60" } : {}) },
     })

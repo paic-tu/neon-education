@@ -30,7 +30,8 @@ async function notifyOrderMessage(orderId: string, messageType: "receipt" | "tic
   // Table names are fixed here, never supplied by a request.
   const table = sql.raw(messageType === "receipt" ? "payment_email_notifications" : "ticket_email_notifications")
   const required = messageType === "receipt" ? sql`TRUE` : sql`
-    paid_at >= (SELECT ticket_email_from FROM payment_email_health WHERE id = 'global')
+    (paid_at >= (SELECT ticket_email_from FROM payment_email_health WHERE id = 'global')
+      OR EXISTS (SELECT 1 FROM ticket_email_notifications t WHERE t.order_id = orders.id))
     AND EXISTS (SELECT 1 FROM order_items i WHERE i.order_id = orders.id AND i.is_event_ticket)`
   const claimId = randomUUID()
   let claimed = false

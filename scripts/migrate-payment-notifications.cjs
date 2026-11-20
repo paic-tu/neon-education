@@ -19,6 +19,7 @@ async function main() {
     await client.query(readFileSync(path.join(__dirname, "../lib/db/migrations/0012_add_payment_email_notifications.sql"), "utf8"))
     await client.query(readFileSync(path.join(__dirname, "../lib/db/migrations/0013_add_payment_email_recovery.sql"), "utf8"))
     await client.query(readFileSync(path.join(__dirname, "../lib/db/migrations/0016_add_ticket_email_notifications.sql"), "utf8"))
+    await client.query(readFileSync(path.join(__dirname, "../lib/db/migrations/0017_monitor_existing_ticket_emails.sql"), "utf8"))
     await client.query("COMMIT")
     console.log("Payment email notification migration applied.")
   } catch (error) {

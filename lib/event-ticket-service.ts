@@ -1,9 +1,18 @@
 import { sql, eq, and } from "drizzle-orm"
 import { eventTickets } from "@/lib/db/schema"
 import { getTicketSigningKey, parseTicketCode, verifyTicketCode } from "@/lib/event-ticket-code"
+import type { SelectedEventAddOn } from "@/lib/event-add-ons"
+
+export interface AdmissionDetails {
+  id: string
+  checkedInAt: Date | string
+  attendeeName: string
+  ticketNumber: number
+  addOns: SelectedEventAddOn[]
+}
 
 export class EventError extends Error {
-  constructor(public status: number, public code: string) {
+  constructor(public status: number, public code: string, public details?: AdmissionDetails) {
     super(code)
   }
 }
@@ -81,7 +90,7 @@ export async function admitTicket(connection: any, userId: string, productId: st
         AND EXISTS (SELECT 1 FROM order_items i JOIN orders o ON o.id = i.order_id
           WHERE i.id = t.order_item_id AND o.status = 'paid' AND o.paid_at IS NOT NULL)
         AND EXISTS (SELECT 1 FROM products p WHERE p.id = t.product_id AND p.is_active
-          AND p.product_type = 'event_ticket' AND NOW() BETWEEN p.event_starts_at AND p.event_ends_at)
+          AND p.product_type = 'event_ticket')
         AND EXISTS (SELECT 1 FROM users owner WHERE owner.id = t.user_id AND owner.is_active)
         AND EXISTS (SELECT 1 FROM users u WHERE u.id = ${userId}::uuid AND u.is_active
           AND (u.role = 'admin' OR (u.role = 'event_staff' AND EXISTS (
@@ -101,12 +110,37 @@ export async function admitTicket(connection: any, userId: string, productId: st
   `))
   if (accepted.length) return accepted[0]
 
+  // Explain the current rejection without weakening the atomic admission conditions.
+  const [state] = resultRows<AdmissionDetails & { reason: string }>(await connection.execute(sql`
+    SELECT CASE
+      WHEN NOT EXISTS (SELECT 1 FROM users staff WHERE staff.id = ${userId}::uuid AND staff.is_active
+        AND (staff.role = 'admin' OR (staff.role = 'event_staff' AND EXISTS (
+          SELECT 1 FROM event_staff_assignments a WHERE a.user_id = staff.id AND a.product_id = t.product_id
+        )))) THEN 'FORBIDDEN'
+      WHEN t.checked_in_at IS NOT NULL THEN 'ALREADY_CHECKED_IN'
+      WHEN t.revoked_at IS NOT NULL THEN 'TICKET_REVOKED'
+      WHEN o.status <> 'paid' OR o.paid_at IS NULL THEN 'PAYMENT_UNCONFIRMED'
+      WHEN NOT p.is_active OR p.product_type <> 'event_ticket' THEN 'EVENT_UNAVAILABLE'
+      WHEN NOT owner.is_active THEN 'OWNER_INACTIVE'
+      ELSE 'NOT_ADMISSIBLE'
+    END AS reason, t.id, t.checked_in_at AS "checkedInAt", owner.name AS "attendeeName",
+      t.ticket_number AS "ticketNumber", i.selected_add_ons AS "addOns"
+    FROM event_tickets t JOIN order_items i ON i.id = t.order_item_id
+    JOIN orders o ON o.id = i.order_id JOIN products p ON p.id = t.product_id
+    JOIN users owner ON owner.id = t.user_id WHERE t.id = ${ticket.id}::uuid
+  `))
+  const reason = state?.reason || "NOT_ADMISSIBLE"
   await connection.execute(sql`
     INSERT INTO audit_logs (user_id, action, resource, resource_id, changes)
     VALUES (${userId}::uuid, 'event_scan_rejected', 'event_ticket', ${ticket.id}::uuid,
-      jsonb_build_object('reason', 'NOT_ADMISSIBLE', 'productId', ${productId}::text))
+      jsonb_build_object('reason', ${reason}::text, 'productId', ${productId}::text))
   `)
-  const [fresh] = await connection.select({ checkedInAt: eventTickets.checkedInAt }).from(eventTickets)
-    .where(eq(eventTickets.id, ticket.id)).limit(1)
-  throw new EventError(409, fresh?.checkedInAt ? "ALREADY_CHECKED_IN" : "NOT_ADMISSIBLE")
+  const details = reason === "ALREADY_CHECKED_IN" && state ? {
+    id: state.id,
+    checkedInAt: state.checkedInAt,
+    attendeeName: state.attendeeName,
+    ticketNumber: state.ticketNumber,
+    addOns: state.addOns,
+  } : undefined
+  throw new EventError(reason === "FORBIDDEN" ? 403 : 409, reason, details)
 }

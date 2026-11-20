@@ -82,6 +82,7 @@ test("حجز البريد في قاعدة البيانات والتكرار وإ
     await pg.exec(readFileSync(new URL("../lib/db/migrations/0013_add_payment_email_recovery.sql", import.meta.url), "utf8"))
     await pg.exec(readFileSync(new URL("../lib/db/migrations/0015_add_event_add_ons.sql", import.meta.url), "utf8"))
     await pg.exec(readFileSync(new URL("../lib/db/migrations/0016_add_ticket_email_notifications.sql", import.meta.url), "utf8"))
+    await pg.exec(readFileSync(new URL("../lib/db/migrations/0017_monitor_existing_ticket_emails.sql", import.meta.url), "utf8"))
     const fixture = async (status = "paid") => {
       const id = randomUUID(), userId = randomUUID()
       await pg.query("INSERT INTO users VALUES ($1,'Buyer','buyer@example.test')", [userId])
@@ -145,6 +146,14 @@ test("حجز البريد في قاعدة البيانات والتكرار وإ
       assert.equal(sends, 2)
       const state = await pg.query("SELECT * FROM ticket_email_notifications WHERE order_id=$1", [old])
       assert.equal(state.rows.length, 0)
+      // Only a reviewed, explicitly queued historical order may receive a ticket email.
+      await pg.query("INSERT INTO ticket_email_notifications (order_id) VALUES ($1)", [old])
+      const queue = await pg.query("SELECT * FROM order_email_queue WHERE id=$1 AND message_type='tickets'", [old])
+      assert.equal(queue.rows.length, 1)
+      await Promise.all([notifyPaidOrder(old, connection, send), notifyPaidOrder(old, connection, send)])
+      assert.equal(sends, 3)
+      assert(await notifyPaidOrder(old, connection, send))
+      assert.equal(sends, 3)
       await pg.query("UPDATE orders SET status='cancelled' WHERE id=$1", [id])
     })
     await t.test("الإشعارات المتزامنة والمتكررة ترسل مرة واحدة", async () => {

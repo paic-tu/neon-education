@@ -95,7 +95,10 @@ test("تذاكر الفعاليات: التوقيع والدفع والصلاح�
     await pg.query("INSERT INTO event_staff_assignments (product_id,user_id,assigned_by) VALUES ($1,$2,$3)", [product, staff, admin])
     await pg.query("INSERT INTO orders VALUES ($1,$2,'paid','stream',NOW())", [order, buyer])
     await pg.query("INSERT INTO order_items (id,order_id,product_id,quantity) VALUES ($1,$2,$3,3)", [item, order, product])
-    const dinner = [{ id: randomUUID(), nameAr: "وجبة عشاء", nameEn: "Dinner", price: "25.00" }]
+    const dinner = [
+      { id: randomUUID(), nameAr: "وجبة عشاء", nameEn: "Dinner", price: "25.00", noteAr: "وجبة لشخص واحد", noteEn: "One meal" },
+      { id: randomUUID(), nameAr: "تذكرة حضور", nameEn: "Attendance", price: "0.00", noteAr: "دون عشاء" },
+    ]
     await pg.query("UPDATE order_items SET selected_add_ons=$1::jsonb WHERE id=$2", [JSON.stringify(dinner), item])
     const tickets = async () => connection.select().from(eventTickets).where(eq(eventTickets.orderItemId, item))
     const rejectsCode = async (operation: Promise<unknown>, expected: string) => assert.rejects(operation, (e: unknown) => e instanceof EventError && e.code === expected)
@@ -178,6 +181,9 @@ test("تذاكر الفعاليات: التوقيع والدفع والصلاح�
       assert(logs.rows[0].count >= 1)
     })
     await t.test("مسح متزامن من جهازين يقبل مرة واحدة فقط", async () => {
+      await pg.query("UPDATE products SET event_add_ons=$1::jsonb WHERE id=$2", [
+        JSON.stringify([{ ...dinner[0], nameAr: "خيار جديد", noteAr: "ملاحظة جديدة", price: "99.00" }]), product,
+      ])
       const outcomes = await Promise.allSettled([
         admitTicket(connection, staff, product, firstCode),
         admitTicket(connection, admin, product, firstCode),
@@ -185,13 +191,42 @@ test("تذاكر الفعاليات: التوقيع والدفع والصلاح�
       assert.equal(outcomes.filter((r) => r.status === "fulfilled").length, 1)
       const accepted = outcomes.find((r) => r.status === "fulfilled") as PromiseFulfilledResult<any>
       assert.deepEqual(accepted.value.addOns, dinner)
+      assert.equal(accepted.value.ticketNumber, first.ticketNumber)
       const logs = await pg.query<{ count: number }>("SELECT count(*)::int AS count FROM audit_logs WHERE action='event_check_in' AND resource_id=$1", [first.id])
       assert.equal(logs.rows[0].count, 1)
       await rejectsCode(admitTicket(connection, staff, product, firstCode), "ALREADY_CHECKED_IN")
     })
+    await t.test("المسح المتكرر يعرض المزايا ووقت الدخول الأصلي دون تسجيل حضور إضافي", async () => {
+      const before = (await tickets()).find((ticket) => ticket.id === first.id)!
+      for (const userId of [staff, admin]) {
+        await assert.rejects(admitTicket(connection, userId, product, firstCode), (error: unknown) => {
+          assert(error instanceof EventError)
+          assert.equal(error.code, "ALREADY_CHECKED_IN")
+          assert.equal(error.status, 409)
+          assert.equal(error.details?.attendeeName, "Buyer")
+          assert.equal(error.details?.id, first.id)
+          assert.equal(error.details?.ticketNumber, first.ticketNumber)
+          assert.deepEqual(error.details?.addOns, dinner)
+          assert.equal(new Date(error.details!.checkedInAt).getTime(), before.checkedInAt!.getTime())
+          assert.deepEqual(Object.keys(error.details!).sort(), ["addOns", "attendeeName", "checkedInAt", "id", "ticketNumber"])
+          return true
+        })
+      }
+      const after = (await tickets()).find((ticket) => ticket.id === first.id)!
+      assert.equal(after.checkedInAt!.getTime(), before.checkedInAt!.getTime())
+      assert.equal(after.checkedInBy, before.checkedInBy)
+      const logs = await pg.query<{ count: number }>("SELECT count(*)::int AS count FROM audit_logs WHERE action='event_check_in' AND resource_id=$1", [first.id])
+      assert.equal(logs.rows[0].count, 1)
+      await assert.rejects(admitTicket(connection, otherStaff, product, firstCode), (error: unknown) =>
+        error instanceof EventError && error.code === "FORBIDDEN" && error.details === undefined)
+      await assert.rejects(admitTicket(connection, staff, product, firstCode.replace("NEVT1", "NEVT2")), (error: unknown) =>
+        error instanceof EventError && error.code === "INVALID_TICKET" && error.details === undefined)
+    })
     await t.test("سحب التعيين وتغيير الدور وتعطيل الموظف يمنع الدخول فوراً", async () => {
       await pg.query("DELETE FROM event_staff_assignments WHERE user_id=$1", [staff])
       await rejectsCode(admitTicket(connection, staff, product, ticketCode(second)), "FORBIDDEN")
+      await assert.rejects(admitTicket(connection, staff, product, firstCode), (error: unknown) =>
+        error instanceof EventError && error.code === "FORBIDDEN" && error.details === undefined)
       await pg.query("INSERT INTO event_staff_assignments (product_id,user_id,assigned_by) VALUES ($1,$2,$3)", [product, staff, admin])
       await pg.query("UPDATE users SET role='student' WHERE id=$1", [staff])
       await rejectsCode(admitTicket(connection, staff, product, ticketCode(second)), "FORBIDDEN")
@@ -199,26 +234,42 @@ test("تذاكر الفعاليات: التوقيع والدفع والصلاح�
       await rejectsCode(admitTicket(connection, staff, product, ticketCode(second)), "FORBIDDEN")
       await pg.query("UPDATE users SET is_active=true WHERE id=$1", [staff])
     })
-    await t.test("رفض الدخول قبل النافذة وبعدها وعند تعطيل الفعالية", async () => {
-      await pg.query("UPDATE products SET event_starts_at=NOW()+INTERVAL '10 minutes' WHERE id=$1", [product])
-      await rejectsCode(admitTicket(connection, staff, product, ticketCode(second)), "NOT_ADMISSIBLE")
-      await pg.query("UPDATE products SET event_starts_at=NOW()-INTERVAL '1 hour',event_ends_at=NOW()-INTERVAL '1 minute' WHERE id=$1", [product])
-      await rejectsCode(admitTicket(connection, staff, product, ticketCode(second)), "NOT_ADMISSIBLE")
+    await t.test("قبول المسح قبل الفعالية وبعدها مع منع الاستخدام الثاني", async () => {
+      const anytimeOrder = randomUUID(), anytimeItem = randomUUID()
+      await pg.query("INSERT INTO orders VALUES ($1,$2,'paid','stream',NOW())", [anytimeOrder, buyer])
+      await pg.query("INSERT INTO order_items (id,order_id,product_id,quantity) VALUES ($1,$2,$3,2)", [anytimeItem, anytimeOrder, product])
+      await issueTickets(connection, anytimeOrder)
+      const anytime = await connection.select().from(eventTickets).where(eq(eventTickets.orderItemId, anytimeItem))
+      await pg.query("UPDATE products SET event_starts_at=NOW()+INTERVAL '1 day',event_ends_at=NOW()+INTERVAL '2 days' WHERE id=$1", [product])
+      const before = await admitTicket(connection, staff, product, ticketCode(anytime[0]))
+      assert.equal(before.id, anytime[0].id)
+      assert(before.checkedInAt)
+      await rejectsCode(admitTicket(connection, admin, product, ticketCode(anytime[0])), "ALREADY_CHECKED_IN")
+      await pg.query("UPDATE products SET event_starts_at=NOW()-INTERVAL '2 days',event_ends_at=NOW()-INTERVAL '1 day' WHERE id=$1", [product])
+      const after = await admitTicket(connection, admin, product, ticketCode(anytime[1]))
+      assert.equal(after.id, anytime[1].id)
+      assert(after.checkedInAt)
+      await rejectsCode(admitTicket(connection, staff, product, ticketCode(anytime[1])), "ALREADY_CHECKED_IN")
+    })
+    await t.test("تعطيل الفعالية يمنع الدخول حتى بدون قيود وقت", async () => {
       await pg.query("UPDATE products SET event_ends_at=NOW()+INTERVAL '1 hour',is_active=false WHERE id=$1", [product])
-      await rejectsCode(admitTicket(connection, staff, product, ticketCode(second)), "NOT_ADMISSIBLE")
+      await rejectsCode(admitTicket(connection, staff, product, ticketCode(second)), "EVENT_UNAVAILABLE")
       await pg.query("UPDATE products SET is_active=true WHERE id=$1", [product])
     })
     await t.test("الدفع المعلق لا يسمح بالدخول أو إصدار تذاكر إضافية", async () => {
       await pg.query("UPDATE orders SET status='pending' WHERE id=$1", [order])
-      await rejectsCode(admitTicket(connection, staff, product, ticketCode(second)), "NOT_ADMISSIBLE")
+      await rejectsCode(admitTicket(connection, staff, product, ticketCode(second)), "PAYMENT_UNCONFIRMED")
       await issueTickets(connection, order)
       assert.equal((await tickets()).length, 3)
       assert.deepEqual((await tickets()).map((ticket) => ticket.ticketNumber).sort((a, b) => a - b), [1, 2, 3])
       await pg.query("UPDATE orders SET status='paid' WHERE id=$1", [order])
+      await pg.query("UPDATE orders SET paid_at=NULL WHERE id=$1", [order])
+      await rejectsCode(admitTicket(connection, staff, product, ticketCode(second)), "PAYMENT_UNCONFIRMED")
+      await pg.query("UPDATE orders SET paid_at=NOW() WHERE id=$1", [order])
     })
     await t.test("تعطيل صاحب التذكرة يمنع الدخول", async () => {
       await pg.query("UPDATE users SET is_active=false WHERE id=$1", [buyer])
-      await rejectsCode(admitTicket(connection, staff, product, ticketCode(second)), "NOT_ADMISSIBLE")
+      await rejectsCode(admitTicket(connection, staff, product, ticketCode(second)), "OWNER_INACTIVE")
       await pg.query("UPDATE users SET is_active=true WHERE id=$1", [buyer])
     })
     await t.test("فشل سجل التدقيق يتراجع عن تسجيل الحضور", async () => {
@@ -231,7 +282,7 @@ test("تذاكر الفعاليات: التوقيع والدفع والصلاح�
       await revokeTickets(connection, order)
       await issueTickets(connection, order)
       assert.equal((await tickets()).length, 3)
-      await rejectsCode(admitTicket(connection, staff, product, ticketCode(third)), "NOT_ADMISSIBLE")
+      await rejectsCode(admitTicket(connection, staff, product, ticketCode(third)), "TICKET_REVOKED")
     })
     await t.test("منع تجاوز السعة ورفض المسار اليدوي للتذاكر", async () => {
       const pending = randomUUID()
