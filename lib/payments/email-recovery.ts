@@ -64,7 +64,7 @@ export async function runEmailRecovery(connection: Connection = db, send: MailSe
     else if (outcome.failed > 0) lastError = "EMAIL_RECEIPT_RETRY_FAILED"
 
     const sent = rows(await connection.execute(sql`
-      SELECT order_id, message_id FROM payment_email_notifications
+      SELECT order_id, message_id, message_type FROM order_email_queue
       WHERE sent_at IS NOT NULL AND message_id IS NOT NULL
         AND COALESCE(last_event, '') NOT IN ('delivered', 'bounced', 'complained', 'suppressed', 'failed', 'unknown')
         AND (delivery_checked_at IS NULL OR delivery_checked_at < NOW() - INTERVAL '5 minutes')
@@ -80,8 +80,9 @@ export async function runEmailRecovery(connection: Connection = db, send: MailSe
         const email = await providerGet(`/emails/${encodeURIComponent(receipt.message_id)}`, pacedRequest)
         event = ["queued", "sent", "delivery_delayed", ...terminalEvents].includes(email.last_event) ? email.last_event : "unknown"
       }
+      const table = sql.raw(receipt.message_type === "tickets" ? "ticket_email_notifications" : "payment_email_notifications")
       await connection.execute(sql`
-        UPDATE payment_email_notifications SET last_event = ${event}, delivery_checked_at = NOW()
+        UPDATE ${table} SET last_event = ${event}, delivery_checked_at = NOW()
         WHERE order_id = ${receipt.order_id}::uuid AND message_id = ${receipt.message_id}
       `)
       checked++
@@ -111,9 +112,8 @@ export async function getEmailRecoveryHealth(connection: Connection = db) {
       count(*) FILTER (WHERE n.sent_at IS NULL AND n.first_attempt_at < NOW() - INTERVAL '23 hours')::int AS review,
       count(*) FILTER (WHERE n.last_event IN ('bounced', 'complained', 'suppressed', 'failed', 'unknown')
         OR (n.sent_at < NOW() - INTERVAL '15 minutes' AND COALESCE(n.last_event, '') NOT IN ('delivered', 'bounced', 'complained', 'suppressed', 'failed', 'unknown')))::int AS delivery_issues
-    FROM orders o LEFT JOIN payment_email_notifications n ON n.order_id = o.id
+    FROM order_email_queue n JOIN orders o ON o.id = n.id
     WHERE o.status = 'paid' AND o.paid_at IS NOT NULL
-      AND (n.order_id IS NOT NULL OR o.paid_at >= (SELECT recovery_from FROM payment_email_health WHERE id = 'global'))
   `))
   return {
     stale: !health || Boolean(health.stale),

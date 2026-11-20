@@ -15,7 +15,7 @@ test("إيصال الدفع يستخدم قالب نيون الموحد وراب
     paymentProvider: "stream", ticketCount: 1,
     items: [{ name: "neon ora", price: "1.00", quantity: 1, isEventTicket: true }],
   })
-  assert.equal(receipt.url, `https://neonedu.org/ar/tickets/${id}`)
+  assert.equal(receipt.url, "https://neonedu.org/ar/orders")
   assert(receipt.text.includes("تسجيل الدخول"))
   assert(!receipt.html.includes("<script>"))
   assert(!receipt.html.includes("NEVT1."))
@@ -25,6 +25,19 @@ test("إيصال الدفع يستخدم قالب نيون الموحد وراب
   assert(receipt.html.includes("https://linktr.ee/neonedusa"))
   assert(receipt.html.includes('dir="rtl"'))
   assert(receipt.html.includes("&lt;script&gt;"))
+  assert(receipt.text.includes("رسالة منفصلة"))
+  assert(!receipt.text.includes(`/ar/tickets/${id}`))
+  const tickets = await buildPaymentReceipt({
+    id, name: "<script>Buyer</script>", totalAmount: "1.00", paidAt: new Date(),
+    paymentProvider: "stream", ticketCount: 1,
+    items: [{ name: "Event", price: "1.00", quantity: 1, isEventTicket: true }],
+  }, "tickets")
+  assert.equal(tickets.url, `https://neonedu.org/ar/tickets/${id}`)
+  assert(tickets.text.includes("تسجيل الدخول"))
+  assert(tickets.text.includes("دخول واحد"))
+  assert(!tickets.html.includes("<script>"))
+  assert(!tickets.text.includes("NEVT1."))
+  assert.notEqual(tickets.subject, receipt.subject)
 })
 
 test("طلبات المتجر والدورات تحصل على إيصال دون رابط باركود", async () => {
@@ -68,12 +81,72 @@ test("حجز البريد في قاعدة البيانات والتكرار وإ
     await pg.exec(readFileSync(new URL("../lib/db/migrations/0012_add_payment_email_notifications.sql", import.meta.url), "utf8"))
     await pg.exec(readFileSync(new URL("../lib/db/migrations/0013_add_payment_email_recovery.sql", import.meta.url), "utf8"))
     await pg.exec(readFileSync(new URL("../lib/db/migrations/0015_add_event_add_ons.sql", import.meta.url), "utf8"))
+    await pg.exec(readFileSync(new URL("../lib/db/migrations/0016_add_ticket_email_notifications.sql", import.meta.url), "utf8"))
     const fixture = async (status = "paid") => {
       const id = randomUUID(), userId = randomUUID()
       await pg.query("INSERT INTO users VALUES ($1,'Buyer','buyer@example.test')", [userId])
       await pg.query("INSERT INTO orders VALUES ($1,$2,$3,1.00,NOW(),'stream')", [id, userId, status])
       return id
     }
+    const eventFixture = async () => {
+      const id = await fixture(), productId = randomUUID(), itemId = randomUUID()
+      await pg.query("INSERT INTO products (id,name_ar,name_en) VALUES ($1,'فعالية','Event')", [productId])
+      await pg.query("INSERT INTO order_items (id,order_id,product_id,quantity,price,is_event_ticket) VALUES ($1,$2,$3,2,1.00,true)", [itemId, id, productId])
+      await pg.query("INSERT INTO event_tickets VALUES ($1,$2,NULL),($3,$2,NULL)", [randomUUID(), itemId, randomUUID()])
+      return id
+    }
+    await t.test("شراء الفعالية يرسل رسالتين فقط حتى مع الطلبات المتزامنة", async () => {
+      const id = await eventFixture()
+      const messages: any[] = []
+      const send = async (message: any) => {
+        messages.push(message)
+        return { success: true, messageId: randomUUID() }
+      }
+      await Promise.all([notifyPaidOrder(id, connection, send), notifyPaidOrder(id, connection, send)])
+      assert(await notifyPaidOrder(id, connection, send))
+      assert.equal(messages.length, 2)
+      assert.equal(messages[0].idempotencyKey, `neon-paid-order/${id}`)
+      assert.equal(messages[1].idempotencyKey, `neon-order-tickets/${id}`)
+      assert(messages.every((message) => message.to === "buyer@example.test"))
+      assert(!messages[0].text.includes(`/ar/tickets/${id}`))
+      assert(messages[1].text.includes(`/ar/tickets/${id}`))
+      assert(messages[1].text.includes("عدد التذاكر: 2"))
+    })
+    await t.test("فشل رسالة الباركود لا يعيد إيصال الشراء وتستعاد منفردة", async () => {
+      const id = await eventFixture()
+      let receipts = 0, tickets = 0
+      const send = async (message: any) => {
+        if (message.idempotencyKey === `neon-paid-order/${id}`) {
+          receipts++
+          return { success: true, messageId: randomUUID() }
+        }
+        tickets++
+        return tickets === 1 ? { success: false, errorCode: "EMAIL_DOMAIN_UNVERIFIED" } : { success: true, messageId: randomUUID() }
+      }
+      assert.equal(await notifyPaidOrder(id, connection, send), false)
+      await pg.query("UPDATE ticket_email_notifications SET next_retry_at=NOW()-INTERVAL '1 minute' WHERE order_id=$1", [id])
+      await retryPendingPaymentReceipts(connection, send)
+      assert.equal(receipts, 1)
+      assert.equal(tickets, 2)
+      assert(await notifyPaidOrder(id, connection, send))
+      assert.equal(receipts, 1)
+      assert.equal(tickets, 2)
+    })
+    await t.test("رسالة التذاكر تنتظر الإصدار ولا تصل للحجوزات التاريخية", async () => {
+      const id = await eventFixture()
+      await pg.query("DELETE FROM event_tickets WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id=$1)", [id])
+      let sends = 0
+      const send = async () => { sends++; return { success: true, messageId: randomUUID() } }
+      assert.equal(await notifyPaidOrder(id, connection, send), false)
+      assert.equal(sends, 1)
+      const old = await eventFixture()
+      await pg.query("UPDATE orders SET paid_at=NOW()-INTERVAL '1 day' WHERE id=$1", [old])
+      assert(await notifyPaidOrder(old, connection, send))
+      assert.equal(sends, 2)
+      const state = await pg.query("SELECT * FROM ticket_email_notifications WHERE order_id=$1", [old])
+      assert.equal(state.rows.length, 0)
+      await pg.query("UPDATE orders SET status='cancelled' WHERE id=$1", [id])
+    })
     await t.test("الإشعارات المتزامنة والمتكررة ترسل مرة واحدة", async () => {
       const id = await fixture()
       let messages = 0
@@ -86,6 +159,8 @@ test("حجز البريد في قاعدة البيانات والتكرار وإ
       await Promise.all([notifyPaidOrder(id, connection, send), notifyPaidOrder(id, connection, send)])
       assert(await notifyPaidOrder(id, connection, send))
       assert.equal(messages, 1)
+      const ticketRows = await pg.query("SELECT * FROM ticket_email_notifications WHERE order_id=$1", [id])
+      assert.equal(ticketRows.rows.length, 0)
     })
     await t.test("فشل الإرسال يحرر الحجز لإعادة المحاولة", async () => {
       const id = await fixture()
@@ -98,21 +173,24 @@ test("حجز البريد في قاعدة البيانات والتكرار وإ
       const id = await fixture()
       const productId = randomUUID(), itemId = randomUUID()
       await pg.query("UPDATE orders SET total_amount=0,payment_provider='coupon' WHERE id=$1", [id])
-      await pg.query("INSERT INTO products VALUES ($1,'فعالية','Event')", [productId])
-      await pg.query("INSERT INTO order_items VALUES ($1,$2,$3,NULL,1,1.00,true)", [itemId, id, productId])
+      await pg.query("INSERT INTO products (id,name_ar,name_en) VALUES ($1,'فعالية','Event')", [productId])
+      await pg.query("INSERT INTO order_items (id,order_id,product_id,course_id,quantity,price,is_event_ticket) VALUES ($1,$2,$3,NULL,1,1.00,true)", [itemId, id, productId])
       await pg.query("INSERT INTO event_tickets VALUES ($1,$2,NULL)", [randomUUID(), itemId])
       let attempts = 0
       const send = async (message: any) => {
         attempts++
-        assert.equal(message.idempotencyKey, `neon-paid-order/${id}`)
-        assert(message.text.includes(`/ar/tickets/${id}`))
-        assert(message.text.includes("قسيمة"))
-        assert(message.text.includes("0.00"))
+        if (message.idempotencyKey === `neon-paid-order/${id}`) {
+          assert(message.text.includes("قسيمة"))
+          assert(message.text.includes("0.00"))
+        } else {
+          assert.equal(message.idempotencyKey, `neon-order-tickets/${id}`)
+          assert(message.text.includes(`/ar/tickets/${id}`))
+        }
         return attempts === 1 ? { success: false } : { success: true, messageId: "coupon-receipt" }
       }
       assert(await notifyCouponOrderWithRetry(id, connection, send))
       assert(await notifyCouponOrderWithRetry(id, connection, send))
-      assert.equal(attempts, 2)
+      assert.equal(attempts, 3)
       const row = await pg.query<{ sent_at: string; message_id: string }>("SELECT sent_at,message_id FROM payment_email_notifications WHERE order_id=$1", [id])
       assert(row.rows[0].sent_at)
       assert.equal(row.rows[0].message_id, "coupon-receipt")
@@ -286,6 +364,51 @@ test("حجز البريد في قاعدة البيانات والتكرار وإ
         if (previousFrom === undefined) delete process.env.RESEND_FROM
         else process.env.RESEND_FROM = previousFrom
       }
+    })
+    await t.test("المراقبة تسجل تسليم الإيصال والباركود بشكل مستقل", async () => {
+      await pg.exec("UPDATE orders SET status='cancelled'")
+      await pg.exec("DELETE FROM payment_email_notifications; DELETE FROM ticket_email_notifications")
+      const id = await eventFixture()
+      const receiptId = randomUUID(), ticketId = randomUUID()
+      await notifyPaidOrder(id, connection, async (message) => ({
+        success: true, messageId: message.idempotencyKey === `neon-paid-order/${id}` ? receiptId : ticketId,
+      }))
+      const previousKey = process.env.RESEND_API_KEY, previousFrom = process.env.RESEND_FROM
+      process.env.RESEND_API_KEY = "test-key"
+      process.env.RESEND_FROM = "Neon <receipt@example.test>"
+      const request: typeof fetch = async (url) => {
+        const path = String(url).replace("https://api.resend.com", "")
+        if (path === "/domains") return Response.json({ data: [{ id: "domain", name: "example.test" }] })
+        if (path === "/domains/domain") return Response.json({ status: "verified" })
+        if (path === `/emails/${receiptId}`) return Response.json({ last_event: "delivered" })
+        if (path === `/emails/${ticketId}`) return Response.json({ last_event: "bounced" })
+        throw new Error("Unexpected provider request")
+      }
+      try {
+        const neverSend = async () => { throw new Error("Accepted messages must not be resent") }
+        const result = await runEmailRecovery(connection, neverSend, request, 0)
+        assert.equal(result.checked, 2)
+        assert.equal((await getEmailRecoveryHealth(connection)).deliveryIssues, 1)
+        const receipt = await pg.query("SELECT last_event FROM payment_email_notifications WHERE order_id=$1", [id])
+        const ticket = await pg.query("SELECT last_event FROM ticket_email_notifications WHERE order_id=$1", [id])
+        assert.equal(receipt.rows[0].last_event, "delivered")
+        assert.equal(ticket.rows[0].last_event, "bounced")
+        assert.equal((await runEmailRecovery(connection, neverSend, request, 0)).checked, 0)
+      } finally {
+        if (previousKey === undefined) delete process.env.RESEND_API_KEY
+        else process.env.RESEND_API_KEY = previousKey
+        if (previousFrom === undefined) delete process.env.RESEND_FROM
+        else process.env.RESEND_FROM = previousFrom
+      }
+    })
+    await t.test("إعادة الترحيل تحفظ الرسائل المقبولة وتمنع إعادة محاولة المحتوى القديم غير المؤكد", async () => {
+      const id = await fixture()
+      await pg.query("INSERT INTO payment_email_notifications (order_id,first_attempt_at,attempt_count) VALUES ($1,NOW()-INTERVAL '1 hour',1)", [id])
+      const before = await pg.query("SELECT ticket_email_from FROM payment_email_health WHERE id='global'")
+      await pg.exec(readFileSync(new URL("../lib/db/migrations/0016_add_ticket_email_notifications.sql", import.meta.url), "utf8"))
+      const after = await pg.query("SELECT ticket_email_from FROM payment_email_health WHERE id='global'")
+      assert.deepEqual(after.rows, before.rows)
+      assert.equal(await notifyPaidOrder(id, connection, async () => { throw new Error("Uncertain old content must be reviewed") }), false)
     })
   } finally {
     await pg.close()

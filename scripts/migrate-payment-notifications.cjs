@@ -15,9 +15,15 @@ async function main() {
   const client = new Client({ connectionString, connectionTimeoutMillis: 20000 })
   await client.connect()
   try {
+    await client.query("BEGIN")
     await client.query(readFileSync(path.join(__dirname, "../lib/db/migrations/0012_add_payment_email_notifications.sql"), "utf8"))
     await client.query(readFileSync(path.join(__dirname, "../lib/db/migrations/0013_add_payment_email_recovery.sql"), "utf8"))
+    await client.query(readFileSync(path.join(__dirname, "../lib/db/migrations/0016_add_ticket_email_notifications.sql"), "utf8"))
+    await client.query("COMMIT")
     console.log("Payment email notification migration applied.")
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {})
+    throw error
   } finally {
     await client.end()
   }

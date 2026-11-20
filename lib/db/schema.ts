@@ -389,11 +389,26 @@ export const paymentEmailNotifications = pgTable("payment_email_notifications", 
 export const paymentEmailHealth = pgTable("payment_email_health", {
   id: text("id").primaryKey(),
   recoveryFrom: timestamp("recovery_from", { withTimezone: true }).notNull().defaultNow(),
+  ticketEmailFrom: timestamp("ticket_email_from", { withTimezone: true }).notNull().defaultNow(),
   lastRunAt: timestamp("last_run_at", { withTimezone: true }),
   domainStatus: varchar("domain_status", { length: 80 }),
   lastError: varchar("last_error", { length: 80 }),
   claimId: uuid("claim_id"),
   claimedAt: timestamp("claimed_at", { withTimezone: true }),
+})
+
+export const ticketEmailNotifications = pgTable("ticket_email_notifications", {
+  orderId: uuid("order_id").primaryKey().references(() => orders.id, { onDelete: "cascade" }),
+  claimId: uuid("claim_id"),
+  claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  messageId: varchar("message_id", { length: 255 }),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  firstAttemptAt: timestamp("first_attempt_at", { withTimezone: true }),
+  nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
+  lastError: varchar("last_error", { length: 80 }),
+  lastEvent: varchar("last_event", { length: 80 }),
+  deliveryCheckedAt: timestamp("delivery_checked_at", { withTimezone: true }),
 })
 
 // Order Items table
